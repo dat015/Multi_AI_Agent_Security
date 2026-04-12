@@ -1,0 +1,45 @@
+# Created by venv; see https://docs.python.org/3/library/venv.html
+env/
+
+# 🔹 Virtual environment
+env/
+venv/
+.venv/
+ENV/
+
+# 🔹 Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# 🔹 Environment variables (rất quan trọng)
+.env
+.env.*
+
+# 🔹 IDE / Editor
+.vscode/
+.idea/
+
+# 🔹 OS files
+.DS_Store
+Thumbs.db
+
+# 🔹 Logs
+*.log
+
+# 🔹 Build / distribution
+build/
+dist/
+*.egg-info/
+
+# 🔹 Jupyter Notebook
+.ipynb_checkpoints/
+
+# 🔹 Testing / coverage
+.pytest_cache/
+.coverage
+htmlcov/
+
+# 🔹 Migrations (tuỳ project)
+# migrations/
