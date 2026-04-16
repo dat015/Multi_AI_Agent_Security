@@ -1,8 +1,28 @@
-MODEL_NAME = "gemini-1.5-flash"
+MODEL_NAME = "gpt-4o-mini"
 
 DEFAULT_TEMPERATURE = 0.3
 
-SWAGGER_DEFAULT_PATH = "swagger/api.yaml"
+SWAGGER_DEFAULT_PATH = "swagger/api.json"
+NORMALIZER_PROMPT = """
+You are a Security Metadata Translator. 
+Convert the following raw API data into a standardized Security Schema.
+Identify which parameter acts as the 'Resource ID' and which acts as the 'Owner ID' based on context, even if they have unconventional names (e.g., 'u_key', 'ref_no').
+
+RAW DATA:
+Method: {method}
+Path: {path}
+Schema: {schema}
+
+OUTPUT JSON FORMAT:
+{{
+  "resource_id_param": "name_of_param",
+  "owner_id_param": "name_of_param",
+  "action_type": "READ/CREATE/UPDATE/DELETE",
+  "is_admin_function": true/false,
+  "potential_vulnerability": ["BOLA", "BFLA"],
+  "reasoning": "Brief explanation"
+}}
+"""
 
 AGENT_SYSTEM_PROMPT = """
 # ROLE:
