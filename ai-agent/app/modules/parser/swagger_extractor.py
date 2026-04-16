@@ -3,7 +3,20 @@ from app.schemas.api_schema import APIEndpoint, APIParameter, ParsedSpec
 
 
 class SwaggerExtractor:
-
+    @staticmethod
+    def extract_id_from_schema(schema: dict) -> List[str]:
+        """Quét sâu vào schema để tìm các trường có khả năng là ID"""
+        found_ids = []
+        properties = schema.get("properties", {})
+        for prop_name, prop_details in properties.items():
+            # Nếu là UUID hoặc Integer và không phải là filter phổ biến
+            is_uuid = prop_details.get("format") == "uuid"
+            is_int = prop_details.get("type") == "integer"
+            
+            if is_uuid or is_int:
+                found_ids.append(prop_name)
+        return found_ids\
+        
     @staticmethod
     def extract(spec: dict) -> ParsedSpec:
         endpoints: List[APIEndpoint] = []

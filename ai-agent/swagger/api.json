@@ -1,0 +1,170 @@
+{
+  "openapi": "3.0.1",
+  "info": {
+    "title": "Smart Logistics & Fleet Management API",
+    "version": "v2.0-beta",
+    "description": "API quản lý vận tải chứa các lỗi logic (BOLA/BFLA) để kiểm thử Recon Agent."
+  },
+  "paths": {
+    "/auth/v2/join": {
+      "post": {
+        "tags": ["Identity"],
+        "summary": "Đăng ký tài khoản tài xế hoặc quản lý",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AccountJoinDTO"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "OK" }
+        }
+      }
+    },
+    "/api/transport/shipments/{sid}": {
+      "get": {
+        "tags": ["Operations"],
+        "summary": "Truy xuất thông tin đơn hàng vận chuyển",
+        "parameters": [
+          {
+            "name": "sid",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": { "description": "OK" }
+        }
+      },
+      "patch": {
+        "tags": ["Operations"],
+        "summary": "Cập nhật lộ trình hoặc trạng thái đơn hàng",
+        "parameters": [
+          {
+            "name": "sid",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateShipmentDTO"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "OK" }
+        }
+      }
+    },
+    "/management/fleet/internal/config": {
+      "get": {
+        "tags": ["System"],
+        "summary": "Lấy cấu hình hệ thống định vị GPS (Sensitive)",
+        "responses": {
+          "200": { "description": "Danh sách IP và API Key" }
+        }
+      }
+    },
+    "/management/users/{u_ref}/override-role": {
+      "post": {
+        "tags": ["System"],
+        "summary": "Thay đổi quyền hạn người dùng",
+        "parameters": [
+          {
+            "name": "u_ref",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string", "format": "uuid" }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "new_role": {
+                    "type": "string",
+                    "enum": ["Driver", "Manager", "Admin"]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "OK" }
+        }
+      }
+    },
+    "/api/v2/reports/generate": {
+      "put": {
+        "tags": ["Reports"],
+        "summary": "Tạo báo cáo doanh thu theo tháng (Hành vi thực tế là GET)",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "month": { "type": "integer" },
+                  "year": { "type": "integer" },
+                  "include_sensitive_data": { "type": "boolean" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Báo cáo chi tiết" }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "AccountJoinDTO": {
+        "type": "object",
+        "properties": {
+          "email_addr": { "type": "string" },
+          "password_hash": { "type": "string" },
+          "full_name": { "type": "string" },
+          "driver_license_no": { "type": "string" }
+        }
+      },
+      "UpdateShipmentDTO": {
+        "type": "object",
+        "properties": {
+          "current_status": { "type": "string" },
+          "driver_pk_id": { "type": "string", "format": "uuid" },
+          "metadata": {
+            "type": "object",
+            "properties": {
+              "owner_ref": { "type": "string", "format": "uuid" },
+              "is_priority": { "type": "boolean" }
+            }
+          }
+        }
+      }
+    },
+    "securitySchemes": {
+      "BearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
+      }
+    }
+  },
+  "security": [
+    { "BearerAuth": [] }
+  ]
+}
