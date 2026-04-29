@@ -1,30 +1,41 @@
-from app.modules.parser.swagger_parser import SwaggerParser
-from app.security.security_analyzer import SecurityAnalyzer
-from app.modules.agent.agent import AIAgent
-from app.core.constants import SWAGGER_DEFAULT_PATH
-from app.modules.parser.swagger_extractor import SwaggerExtractor
+from fastapi import FastAPI
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
+from fastapi.middleware.cors import CORSMiddleware
+from pathlib import Path
 
-def main():
-    # 1. Parse (Resolving các $ref)
-    spec = SwaggerParser.parse(SWAGGER_DEFAULT_PATH)
+from app.controllers import agent_controller
 
-    # 2. Extract (Lấy Metadata chi tiết)
-    parsed_data = SwaggerExtractor.extract(spec)
+app = FastAPI(title="API Security Tester", version="1.0.0")
 
-    # 3. Static Filter (Giai đoạn 1+2: Giảm 70% Token rác)
-    potential_threats = SecurityAnalyzer.analyze(parsed_data.endpoints)
+# 1. Cấu hình CORS
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
-    if potential_threats:
-        agent = AIAgent()
-        
-        # 4. Semantic Normalization (Giai đoạn 3: Dịch code sang convention chung để AI hiểu)
-        normalized_data = agent.normalize(potential_threats)
-        
-        # 5. Expert Audit (Giai đoạn 4: Chỉ soi những thứ đã chuẩn hóa)
-        final_analysis = agent.audit(normalized_data)
-        
-        print(final_analysis)
+# 2. Cấu hình Static Files & Trang chủ (Nằm ở main là chuẩn nhất)
+BASE_DIR = Path(__file__).resolve().parent
 
+# Mount thư mục static để load css, js
+app.mount(
+    "/static",
+    StaticFiles(directory=BASE_DIR / "static"),
+    name="static"
+)
 
-if __name__ == "__main__":
-    main()
+@app.get("/")
+def serve_frontend():
+    """Trang chủ UI"""
+    index_path = BASE_DIR / "static" / "index.html"
+    return FileResponse(str(index_path))
+
+# 3. Nhúng API Router
+# Các API sẽ có dạng: /api/agent/analyze, /api/agent/result/...
+app.include_router(
+    agent_controller.router, 
+    prefix="/api/agent", 
+    tags=["Agent Controller"]
+)
