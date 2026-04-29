@@ -1,0 +1,428 @@
+[
+  {
+    "owasp_id": "API1",
+    "name": "Broken Object Level Authorization",
+    "description": "Lỗ hổng xảy ra khi API không kiểm tra xem user hiện tại có quyền truy cập vào object (dữ liệu) được yêu cầu thông qua ID hay không.",
+
+    "recon_signatures": {
+      "target_methods": ["GET", "PUT", "PATCH", "DELETE"],
+
+      "openapi_patterns": [
+        "has_path_parameters",
+        {
+          "parameters_named": [
+            "id",
+            "uuid",
+            "user_id",
+            "order_id",
+            "account_id",
+            "product_id",
+            "invoice_id"
+          ]
+        }
+      ]
+    },
+
+    "test_plan_instructions": {
+      "prerequisites": "Cần 2 Access Tokens hợp lệ từ 2 User khác nhau (User_A và User_B).",
+      "steps": [
+        "Bước 1: Gọi API bằng Token của User_A với {id} của User_A. Lưu lại response hợp lệ.",
+        "Bước 2: Thay thế {id} bằng ID của User_B.",
+        "Bước 3: Thực hiện gọi API với Token của User_A nhưng URL chứa {id} của User_B."
+      ],
+      "payload_strategy": "ID Substitution (Tráo đổi ID)"
+    },
+
+    "analyzer_validation_rules": {
+      "vulnerable_conditions": [
+        "status_code == 200",
+        "response_body_contains_data_of_User_B"
+      ],
+      "secure_conditions": ["status_code in [401, 403, 404]"]
+    }
+  },
+
+  {
+    "owasp_id": "API2",
+    "name": "Broken Authentication",
+    "description": "Lỗ hổng xảy ra khi cơ chế xác thực được triển khai không đúng, cho phép attacker đánh cắp token hoặc giả mạo danh tính người dùng khác.",
+
+    "recon_signatures": {
+      "target_methods": ["POST", "PUT", "PATCH", "DELETE", "GET"],
+      "openapi_patterns": [
+        "endpoints_related_to_login_reset_password_change_password",
+        {
+          "parameters_named": [
+            "password",
+            "old_password",
+            "new_password",
+            "token",
+            "reset_token"
+          ]
+        }
+      ]
+    },
+
+    "test_plan_instructions": {
+      "prerequisites": "Có tài khoản hợp lệ, có thể đăng ký tài khoản mới.",
+      "steps": [
+        "Bước 1: Kiểm tra endpoint đăng nhập: thử gửi tên đăng nhập đúng với mật khẩu sai nhiều lần, xem có cơ chế rate-limit hay khóa tài khoản không.",
+        "Bước 2: Kiểm tra endpoint quên mật khẩu: thử yêu cầu reset token cho tài khoản khác, kiểm tra token có dễ đoán không (ví dụ timestamp, số tăng dần).",
+        "Bước 3: Kiểm tra tính an toàn của JWT: xem có chấp nhận 'alg: none' không, có verify chữ ký không, có sử dụng secret yếu không.",
+        "Bước 4: Kiểm tra token có bị lộ trong URL (log, referer) không, hoặc token có thời gian sống quá dài."
+      ],
+      "payload_strategy": "Credential Stuffing, Token Brute Force, JWT Tampering"
+    },
+
+    "analyzer_validation_rules": {
+      "vulnerable_conditions": [
+        "no_rate_limit_on_login_endpoint",
+        "password_reset_token_is_predictable",
+        "jwt_accepts_none_algorithm",
+        "jwt_secret_weak_or_default",
+        "token_leaked_in_url"
+      ],
+      "secure_conditions": [
+        "rate_limit_and_account_lockout_implemented",
+        "password_reset_token_is_random_and_one_time",
+        "jwt_verifies_signature_properly",
+        "token_not_exposed_in_url"
+      ]
+    }
+  },
+
+  {
+    "owasp_id": "API3",
+    "name": "Broken Object Property Level Authorization",
+    "description": "Lỗ hổng kết hợp giữa lộ dữ liệu quá mức và gán hàng loạt, xảy ra khi API không kiểm tra quyền truy cập ở cấp độ thuộc tính của object, cho phép đọc hoặc ghi dữ liệu không được phép.",
+
+    "recon_signatures": {
+      "target_methods": ["GET", "PUT", "PATCH", "POST"],
+      "openapi_patterns": [
+        "response_schema_contains_sensitive_properties",
+        {
+          "parameters_named": [
+            "fields",
+            "include",
+            "exclude",
+            "_fields",
+            "select"
+          ]
+        }
+      ]
+    },
+
+    "test_plan_instructions": {
+      "prerequisites": "Cần token của user bình thường. Tài khoản có dữ liệu nhạy cảm (ví dụ: role, is_admin, email_verified, balance).",
+      "steps": [
+        "Bước 1 (Mass Assignment - Ghi): Gọi API PATCH/PUT để cập nhật object, thêm vào body các trường không được phép (ví dụ: 'is_admin': true, 'role': 'admin').",
+        "Bước 2 (Excessive Data Exposure - Đọc): Gọi API GET để lấy object, kiểm tra response có chứa nhiều trường hơn mức cần thiết (ví dụ: nội dung tin nhắn riêng tư, hash password).",
+        "Bước 3: Thử dùng parameter 'fields' để chỉ định lấy trường nhạy cảm nếu API cho phép (GET /user?id=123&fields=password_hash)."
+      ],
+      "payload_strategy": "Property Injection (Mass Assignment) và Parameter Polluting"
+    },
+
+    "analyzer_validation_rules": {
+      "vulnerable_conditions": [
+        "can_set_is_admin_or_role_via_update_endpoint",
+        "response_contains_sensitive_fields (password_hash, credit_card, secret_key)",
+        "fields_parameter_allows_access_to_restricted_properties"
+      ],
+      "secure_conditions": [
+        "update_endpoint_only_allows_whitelisted_properties",
+        "response_only_contains_necessary_fields",
+        "fields_parameter_strictly_controlled"
+      ]
+    }
+  },
+
+  {
+    "owasp_id": "API4",
+    "name": "Unrestricted Resource Consumption",
+    "description": "Lỗ hổng xảy ra khi API không giới hạn tài nguyên (số lượng request, kích thước payload, bộ nhớ xử lý, băng thông) dẫn đến DoS hoặc tăng chi phí vận hành (ví dụ: SMS, email, API tốn phí).",
+
+    "recon_signatures": {
+      "target_methods": ["GET", "POST", "PUT", "DELETE", "PATCH"],
+      "openapi_patterns": [
+        "endpoints_without_rate_limit_headers",
+        "operations_that_consume_external_resources (sms, email, ocr, video_processing)",
+        "bulk_operations_allowed"
+      ]
+    },
+
+    "test_plan_instructions": {
+      "prerequisites": "Token hợp lệ, có thể là user thường. Công cụ: Burp Intruder, Python script.",
+      "steps": [
+        "Bước 1: Gửi một request tới API endpoint, ghi nhận tốc độ xử lý trung bình.",
+        "Bước 2: Gửi cùng request đó với tốc độ cao (ví dụ 100-1000 request/giây).",
+        "Bước 3: Kiểm tra có response trả về lỗi như '429 Too Many Requests' không, hoặc API có bị chậm/tê liệt không.",
+        "Bước 4: Đối với endpoint upload hoặc xử lý dữ liệu: gửi file rất lớn hoặc payload lồng nhau sâu (deep JSON) để tiêu tốn CPU/memory."
+      ],
+      "payload_strategy": "Rate Limit Bypass, Payload Size Fuzzing, Deep Recursive JSON"
+    },
+
+    "analyzer_validation_rules": {
+      "vulnerable_conditions": [
+        "no_rate_limit_headers (X-RateLimit-*) in response",
+        "can_send_thousands_of_requests_without_429",
+        "large_payload_causes_timeout_or_server_error",
+        "can_exhaust_paid_resources (sms/email) cheaply"
+      ],
+      "secure_conditions": [
+        "rate_limit_headers_present",
+        "too_many_requests_return_429",
+        "request_size_limited (413 for oversized payload)",
+        "timeouts_and_resource_limits_enforced"
+      ]
+    }
+  },
+
+  {
+    "owasp_id": "API5",
+    "name": "Broken Function Level Authorization",
+    "description": "Lỗ hổng xảy ra khi phân quyền chức năng (function/endpoint level) không được kiểm tra đúng, cho phép user thường truy cập các API chỉ dành cho admin hoặc role cao hơn.",
+
+    "recon_signatures": {
+      "target_methods": ["GET", "POST", "PUT", "DELETE", "PATCH"],
+      "openapi_patterns": [
+        "endpoints_with_admin_in_path ( /admin, /system, /internal, /debug, /metrics )",
+        "operations_that_modify_system_config_or_other_users_data"
+      ]
+    },
+
+    "test_plan_instructions": {
+      "prerequisites": "Cần token của user thường và token của admin (nếu có thể có được).",
+      "steps": [
+        "Bước 1: Xác định các endpoint dành riêng cho admin hoặc role cao thông qua tài liệu, fuzzing, hoặc phân tích code (nếu có).",
+        "Bước 2: Gọi từng endpoint này bằng token của user thường.",
+        "Bước 3: Nếu endpoint trả về dữ liệu hoặc thực hiện hành động thành công (thay vì 403/401), thì có lỗ hổng.",
+        "Bước 4: Đặc biệt chú ý các endpoint: tạo/sửa/xóa user, cấu hình hệ thống, lấy log, thống kê toàn bộ."
+      ],
+      "payload_strategy": "Privilege Escalation via Direct Endpoint Access"
+    },
+
+    "analyzer_validation_rules": {
+      "vulnerable_conditions": [
+        "normal_user_can_access_admin_endpoint (status code 200)",
+        "normal_user_can_modify_other_users_data",
+        "api_returns_sensitive_system_info_to_low_privilege_user",
+        "missing_role_check_in_function_logic"
+      ],
+      "secure_conditions": [
+        "admin_endpoints_return_403_to_normal_user",
+        "role_based_access_control_enforced_consistently",
+        "no_admin_endpoints_in_same_namespace_as_user_endpoints"
+      ]
+    }
+  },
+
+  {
+    "owasp_id": "API6",
+    "name": "Unrestricted Access to Sensitive Business Flows",
+    "description": "Lỗ hổng xảy ra khi API không có cơ chế bù trừ (compensating controls) để ngăn chặn tự động hóa gây hại cho luồng nghiệp vụ nhạy cảm, như mua vé, đặt hàng số lượng lớn, vote, đăng bình luận spam.",
+
+    "recon_signatures": {
+      "target_methods": ["POST", "PUT", "PATCH", "DELETE"],
+      "openapi_patterns": [
+        "endpoints_for_checkout_booking_purchase_vote_comment",
+        "high_value_business_operations"
+      ]
+    },
+
+    "test_plan_instructions": {
+      "prerequisites": "Token hợp lệ. Có thể cần nhiều tài khoản hoặc proxy pool để tránh rate limit cơ bản.",
+      "steps": [
+        "Bước 1: Xác định luồng nghiệp vụ nhạy cảm (ví dụ mua hàng, đặt vé, gửi tin nhắn hàng loạt, vote).",
+        "Bước 2: Tự động hóa luồng đó bằng script với tốc độ cao (ví dụ 100 lần/phút).",
+        "Bước 3: Quan sát xem hệ thống có ngăn chặn được không (captcha, tăng độ khó, giới hạn theo tài khoản, xác thực SMS).",
+        "Bước 4: Nếu không có biện pháp bù trừ, tấn công có thể gây thiệt hại (hết hàng, tăng chi phí, làm sai lệch dữ liệu)."
+      ],
+      "payload_strategy": "Automation of Business Flow"
+    },
+
+    "analyzer_validation_rules": {
+      "vulnerable_conditions": [
+        "can_automate_checkout_without_captcha_or_challenge",
+        "no_limit_on_same_user_performing_action_many_times",
+        "can_block_resources_for_other_users_by_automation",
+        "no_behavioral_anomaly_detection"
+      ],
+      "secure_conditions": [
+        "captcha_or_other_challenge_for_sensitive_flows",
+        "velocity_checks_per_user_and_per_ip",
+        "requires_human_interaction_for_high_risk_actions",
+        "rate_limit_by_operation_type"
+      ]
+    }
+  },
+
+  {
+    "owasp_id": "API7",
+    "name": "Server Side Request Forgery (SSRF)",
+    "description": "Lỗ hổng xảy ra khi API fetch một remote resource từ URL do người dùng cung cấp mà không kiểm tra hợp lệ, cho phép attacker tấn công vào internal network, metadata cloud, hoặc vượt qua firewall.",
+
+    "recon_signatures": {
+      "target_methods": ["GET", "POST", "PUT", "PATCH"],
+      "openapi_patterns": [
+        "parameters_named (url, uri, webhook, callback, proxy, fetch, download, image_url, avatar_url, preview_url)",
+        "endpoints_for_proxying_or_fetching_content"
+      ]
+    },
+
+    "test_plan_instructions": {
+      "prerequisites": "Token hợp lệ (có thể không cần). Cần server do attacker kiểm soát hoặc biết internal IP/port.",
+      "steps": [
+        "Bước 1: Tìm endpoint cho phép cung cấp URL (ví dụ: POST /fetch, GET /download?url=...).",
+        "Bước 2: Thay URL bằng 'http://127.0.0.1:8080/admin' hoặc 'http://169.254.169.254/latest/meta-data/' (cloud metadata).",
+        "Bước 3: Nếu response chứa nội dung của internal service hoặc metadata, thì lỗ hổng tồn tại.",
+        "Bước 4: Thử dùng các scheme như file:// hoặc dict:// để đọc file local hoặc port scan."
+      ],
+      "payload_strategy": "Internal Network Probing (Localhost, Cloud Metadata, Port Scan)"
+    },
+
+    "analyzer_validation_rules": {
+      "vulnerable_conditions": [
+        "response_contains_content_from_internal_url",
+        "can_access_cloud_metadata_endpoint",
+        "can_use_file://_to_read_local_files",
+        "can_perform_port_scan_based_on_response_time_or_content"
+      ],
+      "secure_conditions": [
+        "url_whitelist_enforced (only specific domains)",
+        "network_level_restriction (egress filtering)",
+        "no_raw_response_returned_to_user",
+        "scheme_restriction (only https, no file:// dict://)"
+      ]
+    }
+  },
+
+  {
+    "owasp_id": "API8",
+    "name": "Security Misconfiguration",
+    "description": "Lỗ hổng xảy ra khi API hoặc hệ thống hỗ trợ có cấu hình bảo mật sai, thiếu hoặc không được kiểm tra định kỳ (ví dụ: CORS sai, TLS thiếu, stack trace trong lỗi, phương thức HTTP không cần thiết).",
+
+    "recon_signatures": {
+      "target_methods": [
+        "GET",
+        "POST",
+        "PUT",
+        "DELETE",
+        "PATCH",
+        "OPTIONS",
+        "HEAD"
+      ],
+      "openapi_patterns": [
+        "missing_or_invalid_cors_headers",
+        "security_scheme_not_enforced",
+        "http_methods_not_restricted"
+      ]
+    },
+
+    "test_plan_instructions": {
+      "prerequisites": "Không cần token hoặc cần token đặc quyền thấp. Có thể sử dụng công cụ quét tự động (ví dụ: nmap, nuclei).",
+      "steps": [
+        "Bước 1: Gửi yêu cầu OPTIONS đến endpoint để liệt kê các phương thức HTTP được cho phép.",
+        "Bước 2: Kiểm tra phản hồi có chứa header 'Access-Control-Allow-Origin: *' hoặc gửi kèm origin lạ.",
+        "Bước 3: Gửi yêu cầu lỗi (ví dụ: thiếu tham số bắt buộc) để xem response có chứa stack trace hoặc thông tin hệ thống không.",
+        "Bước 4: Kiểm tra nếu có thể truy cập API qua HTTP thay vì HTTPS (nếu bắt buộc là HTTPS)."
+      ],
+      "payload_strategy": "Fuzzing cấu hình và phương thức HTTP"
+    },
+
+    "analyzer_validation_rules": {
+      "vulnerable_conditions": [
+        "response_contains_stack_trace",
+        "cors_header == 'Access-Control-Allow-Origin: *'",
+        "http_methods_contains_unexpected (e.g., 'TRACE', 'DELETE' on GET-only resource)",
+        "access_via_http_when_https_required"
+      ],
+      "secure_conditions": [
+        "status_code_403_for_disallowed_method",
+        "no_sensitive_info_in_error_response",
+        "secure_cors_policy (specific origin, not wildcard)",
+        "tls_enforced"
+      ]
+    }
+  },
+
+  {
+    "owasp_id": "API9",
+    "name": "Improper Inventory Management",
+    "description": "Lỗ hổng xảy ra khi tổ chức không quản lý tốt danh sách các API host, phiên bản, endpoint, dẫn đến việc để lộ các API cũ, không được vá lỗi hoặc dùng chung dữ liệu nhạy cảm với bên thứ ba không cần thiết.",
+
+    "recon_signatures": {
+      "target_methods": ["GET", "POST"],
+      "openapi_patterns": [
+        "api_version_in_path (e.g., /v1/, /v2/)",
+        "deprecated_endpoints",
+        "debug_or_admin_endpoints_exposed"
+      ]
+    },
+
+    "test_plan_instructions": {
+      "prerequisites": "Có thể không cần xác thực hoặc cần token thông thường. Công cụ: fuzzing tên miền phụ, dirsearch, truy cập các phiên bản cũ.",
+      "steps": [
+        "Bước 1: Thu thập tên miền chính và thử các tên miền phụ phổ biến (api-beta, api-staging, api-dev, v1.api, old.api).",
+        "Bước 2: Nếu phát hiện API version trong path (ví dụ /v3/order), thử thay đổi version (/v2/order, /v1/order).",
+        "Bước 3: Kiểm tra xem các endpoint debug ( /debug, /actuator, /swagger, /docs, /graphql-console ) có thể truy cập được không.",
+        "Bước 4: Xem xét tài liệu API công khai (nếu có) để tìm các endpoint hoặc tham số không còn được dùng."
+      ],
+      "payload_strategy": "Fuzzing tên miền phụ và phiên bản API"
+    },
+
+    "analyzer_validation_rules": {
+      "vulnerable_conditions": [
+        "api_version_deprecated_returns_same_data_as_current",
+        "beta_or_staging_endpoint_accessible_from_public_network",
+        "debug_endpoint_accessible (exposes configuration or health info)",
+        "third_party_flow_leaks_unnecessary_sensitive_data"
+      ],
+      "secure_conditions": [
+        "old_api_versions_return_403_or_410",
+        "debug_endpoints_restricted_by_network_or_strong_auth",
+        "no_public_documentation_for_internal_or_staging_apis"
+      ]
+    }
+  },
+
+  {
+    "owasp_id": "API10",
+    "name": "Unsafe Consumption of APIs",
+    "description": "Lỗ hổng xảy ra khi API mù quáng tin tưởng dữ liệu nhận từ API bên thứ ba, dẫn đến không kiểm tra/xác thực đầu vào đúng cách, gây ra các lỗ hổng như injection, SSRF, hoặc lộ dữ liệu qua redirect.",
+
+    "recon_signatures": {
+      "target_methods": ["GET", "POST", "PUT", "PATCH", "DELETE"],
+      "openapi_patterns": [
+        "external_integration_indicators (e.g., webhook, callback, fetch_url, enrich)",
+        "parameter_named (url, webhook_url, external_id, provider_url)"
+      ]
+    },
+
+    "test_plan_instructions": {
+      "prerequisites": "Không cần token đặc biệt, cần hiểu luồng gọi API ra bên ngoài. Có thể dùng máy chủ do attacker kiểm soát để nhận callback.",
+      "steps": [
+        "Bước 1: Xác định endpoint API có chấp nhận URL hoặc định danh bên thứ ba (ví dụ: /fetch-data?url=...).",
+        "Bước 2: Thay thế URL bằng URL của máy chủ do mình kiểm soát (http://attacker.com/callback).",
+        "Bước 3: Nếu API gửi yêu cầu đến URL đó và có thể mang theo dữ liệu nhạy cảm (auth token, user data), đó là dấu hiệu.",
+        "Bước 4: Thử gửi payload injection (SQLi, XXE, ...) trong tham số mà API sẽ gửi đến bên thứ ba, xem có phản hồi lạ không.",
+        "Bước 5: Cung cấp URL trả về mã 301/302 và kiểm tra API có follow redirect mù quáng không."
+      ],
+      "payload_strategy": "External Interaction (SSRF, Callback) và Injection thông qua dữ liệu được 'trusted'"
+    },
+
+    "analyzer_validation_rules": {
+      "vulnerable_conditions": [
+        "api_sends_request_to_user_provided_url_without_validation",
+        "api_follows_redirect_from_user_provided_url",
+        "response_contains_data_injected_through_third_party_payload",
+        "no_timeout_or_resource_limit_when_consuming_external_api"
+      ],
+      "secure_conditions": [
+        "third_party_url_whitelist_is_enforced",
+        "redirects_are_not_followed_or_strictly_controlled",
+        "input_from_external_api_is_sanitized_like_user_input",
+        "tls_required_for_all_external_communication"
+      ]
+    }
+  }
+]

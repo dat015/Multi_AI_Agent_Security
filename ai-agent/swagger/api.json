@@ -1,170 +1,212 @@
 {
   "openapi": "3.0.1",
   "info": {
-    "title": "Smart Logistics & Fleet Management API",
-    "version": "v2.0-beta",
-    "description": "API quản lý vận tải chứa các lỗi logic (BOLA/BFLA) để kiểm thử Recon Agent."
+    "title": "SmartLogistics Enterprise Suite",
+    "description": "Hệ thống quản lý vận tải tích hợp (Internal & Partner API)",
+    "version": "2.0.4-beta"
   },
   "paths": {
-    "/auth/v2/join": {
+    "/auth/v1/login": {
       "post": {
         "tags": ["Identity"],
-        "summary": "Đăng ký tài khoản tài xế hoặc quản lý",
+        "summary": "Đăng nhập hệ thống",
+        "responses": { "200": { "description": "Trả về JWT Token" } }
+      }
+    },
+    "/auth/v2/register": {
+      "post": {
+        "tags": ["Identity"],
+        "summary": "Đăng ký tài khoản tài xế/đối tác",
+        "responses": { "201": { "description": "Tạo tài khoản thành công" } }
+      }
+    },
+    "/api/v2/profile/me": {
+      "get": {
+        "tags": ["User"],
+        "summary": "Lấy thông tin cá nhân hiện tại",
+        "security": [{ "BearerAuth": [] }],
+        "responses": { "200": { "description": "OK" } }
+      }
+    },
+    "/api/v1/shipments": {
+      "get": {
+        "tags": ["Operations"],
+        "summary": "Liệt kê danh sách vận đơn (Cẩn thận: Thiếu phân trang)",
+        "responses": { "200": { "description": "Trả về mảng Shipment" } }
+      },
+      "post": {
+        "tags": ["Operations"],
+        "summary": "Tạo mới một vận đơn (BOPLA Risk)",
         "requestBody": {
           "content": {
             "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/AccountJoinDTO"
-              }
+              "schema": { "$ref": "#/components/schemas/ShipmentRequest" }
             }
           }
-        },
-        "responses": {
-          "200": { "description": "OK" }
         }
       }
     },
-    "/api/transport/shipments/{sid}": {
+    "/api/v2/transport/shipments/{sid}": {
       "get": {
         "tags": ["Operations"],
-        "summary": "Truy xuất thông tin đơn hàng vận chuyển",
-        "parameters": [
-          {
-            "name": "sid",
-            "in": "path",
-            "required": true,
-            "schema": { "type": "string" }
-          }
-        ],
-        "responses": {
-          "200": { "description": "OK" }
-        }
+        "summary": "Truy xuất chi tiết vận đơn (BOLA Target)",
+        "parameters": [{ "name": "sid", "in": "path", "required": true, "schema": { "type": "string" } }]
       },
       "patch": {
         "tags": ["Operations"],
-        "summary": "Cập nhật lộ trình hoặc trạng thái đơn hàng",
-        "parameters": [
-          {
-            "name": "sid",
-            "in": "path",
-            "required": true,
-            "schema": { "type": "string" }
-          }
-        ],
+        "summary": "Cập nhật trạng thái/tài xế cho vận đơn (BOLA/BOPLA)",
+        "parameters": [{ "name": "sid", "in": "path", "required": true, "schema": { "type": "string" } }]
+      }
+    },
+    "/api/v2/fleet/drivers/{u_ref}": {
+      "get": {
+        "tags": ["Fleet"],
+        "summary": "Lấy thông tin tài xế qua mã tham chiếu",
+        "parameters": [{ "name": "u_ref", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }]
+      }
+    },
+    "/management/internal/fleet/config": {
+      "get": {
+        "tags": ["Admin"],
+        "summary": "Cấu hình hệ thống GPS nội bộ (BFLA Target)",
+        "responses": { "200": { "description": "Sensitive Data" } }
+      }
+    },
+    "/management/finance/revenue/export": {
+      "post": {
+        "tags": ["Finance"],
+        "summary": "Xuất báo cáo doanh thu (Business Flow Risk)",
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/UpdateShipmentDTO"
+                "type": "object",
+                "properties": { "year": { "type": "integer" }, "format": { "type": "string" } }
               }
             }
           }
-        },
-        "responses": {
-          "200": { "description": "OK" }
         }
       }
     },
-    "/management/fleet/internal/config": {
+    "/api/v2/webhooks/register": {
+      "post": {
+        "tags": ["Integrations"],
+        "summary": "Đăng ký webhook nhận thông báo (SSRF Risk)",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": { "callback_url": { "type": "string", "format": "uri" } }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/debug/dump-logs": {
       "get": {
-        "tags": ["System"],
-        "summary": "Lấy cấu hình hệ thống định vị GPS (Sensitive)",
-        "responses": {
-          "200": { "description": "Danh sách IP và API Key" }
-        }
+        "tags": ["Debug"],
+        "summary": "Lấy log hệ thống cũ (Inventory API 9)",
+        "parameters": [{ "name": "file_path", "in": "query", "schema": { "type": "string" } }]
       }
     },
-    "/management/users/{u_ref}/override-role": {
+    "/api/v2/warehouse/stock/{item_id}": {
+      "put": {
+        "tags": ["Warehouse"],
+        "summary": "Cập nhật tồn kho (BOLA)",
+        "parameters": [{ "name": "item_id", "in": "path", "required": true, "schema": { "type": "integer" } }]
+      }
+    },
+    "/api/v2/notifications/broadcast": {
       "post": {
         "tags": ["System"],
-        "summary": "Thay đổi quyền hạn người dùng",
-        "parameters": [
-          {
-            "name": "u_ref",
-            "in": "path",
-            "required": true,
-            "schema": { "type": "string", "format": "uuid" }
-          }
-        ],
+        "summary": "Gửi thông báo toàn hệ thống (BFLA)",
+        "responses": { "200": { "description": "Sent" } }
+      }
+    },
+    "/api/v1/legacy-reports/{report_id}": {
+      "delete": {
+        "tags": ["Debug"],
+        "summary": "Xóa báo cáo cũ (Inventory)",
+        "parameters": [{ "name": "report_id", "in": "path", "required": true, "schema": { "type": "string" } }]
+      }
+    },
+    "/api/v2/partners/external-sync": {
+      "post": {
+        "tags": ["Integrations"],
+        "summary": "Đồng bộ với API bên thứ 3 (Unsafe Consumption API 10)",
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
                 "type": "object",
-                "properties": {
-                  "new_role": {
-                    "type": "string",
-                    "enum": ["Driver", "Manager", "Admin"]
-                  }
-                }
+                "properties": { "remote_api_key": { "type": "string" }, "provider": { "type": "string" } }
               }
             }
           }
-        },
-        "responses": {
-          "200": { "description": "OK" }
         }
       }
     },
-    "/api/v2/reports/generate": {
-      "put": {
-        "tags": ["Reports"],
-        "summary": "Tạo báo cáo doanh thu theo tháng (Hành vi thực tế là GET)",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "month": { "type": "integer" },
-                  "year": { "type": "integer" },
-                  "include_sensitive_data": { "type": "boolean" }
-                }
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": { "description": "Báo cáo chi tiết" }
-        }
+    "/api/v2/documents/upload": {
+      "post": {
+        "tags": ["User"],
+        "summary": "Tải lên chứng từ vận tải (Resource Consumption)",
+        "responses": { "200": { "description": "Success" } }
+      }
+    },
+    "/api/v2/shipments/{sid}/cancel": {
+      "post": {
+        "tags": ["Operations"],
+        "summary": "Hủy đơn hàng (Sensitive Business Flow)",
+        "parameters": [{ "name": "sid", "in": "path", "required": true, "schema": { "type": "string" } }]
+      }
+    },
+    "/management/users/{u_ref}/reset-mfa": {
+      "post": {
+        "tags": ["Admin"],
+        "summary": "Reset mã MFA cho người dùng (BFLA)",
+        "parameters": [{ "name": "u_ref", "in": "path", "required": true, "schema": { "type": "string" } }]
+      }
+    },
+    "/api/v1/system/status": {
+      "get": {
+        "tags": ["System"],
+        "summary": "Kiểm tra trạng thái server (Public)",
+        "responses": { "200": { "description": "Healthy" } }
+      }
+    },
+    "/api/v2/contracts/sign": {
+      "post": {
+        "tags": ["Operations"],
+        "summary": "Ký hợp đồng điện tử (Sensitive Business Flow)",
+        "responses": { "200": { "description": "Signed" } }
+      }
+    },
+    "/api/v2/search": {
+      "get": {
+        "tags": ["System"],
+        "summary": "Tìm kiếm đơn hàng toàn cầu (Resource Consumption Risk)",
+        "parameters": [{ "name": "q", "in": "query", "schema": { "type": "string" } }]
       }
     }
   },
   "components": {
     "schemas": {
-      "AccountJoinDTO": {
+      "ShipmentRequest": {
         "type": "object",
         "properties": {
-          "email_addr": { "type": "string" },
-          "password_hash": { "type": "string" },
-          "full_name": { "type": "string" },
-          "driver_license_no": { "type": "string" }
-        }
-      },
-      "UpdateShipmentDTO": {
-        "type": "object",
-        "properties": {
-          "current_status": { "type": "string" },
+          "origin": { "type": "string" },
+          "destination": { "type": "string" },
+          "weight": { "type": "number" },
           "driver_pk_id": { "type": "string", "format": "uuid" },
-          "metadata": {
-            "type": "object",
-            "properties": {
-              "owner_ref": { "type": "string", "format": "uuid" },
-              "is_priority": { "type": "boolean" }
-            }
-          }
+          "is_admin_override": { "type": "boolean", "default": false },
+          "metadata": { "type": "object" }
         }
       }
     },
     "securitySchemes": {
-      "BearerAuth": {
-        "type": "http",
-        "scheme": "bearer",
-        "bearerFormat": "JWT"
-      }
+      "BearerAuth": { "type": "http", "scheme": "bearer", "bearerFormat": "JWT" }
     }
-  },
-  "security": [
-    { "BearerAuth": [] }
-  ]
+  }
 }

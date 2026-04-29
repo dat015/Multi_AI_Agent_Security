@@ -4,24 +4,21 @@ from app.core.constants import NORMALIZER_PROMPT, AGENT_SYSTEM_PROMPT
 class AIAgent:
     def __init__(self):
         self.client = OpenAI(
-            base_url="https://api.groq.com/openai/v1",
+            base_url=settings.URL_LLM,
             api_key=settings.GROQ_API_KEY 
         )
-        # Tầng 3 (Normalize) dùng model nhỏ cho rẻ và nhanh
-        self.lite_model = "llama-3.1-8b-instant" 
-        # Tầng 4 (Audit) dùng model lớn để suy luận logic tốt hơn
-        self.expert_model = "llama-3.3-70b-versatile" 
+        self.expert_model = settings.LARGE_MODEL_NAME
 
-    def normalize(self, findings):
-        """Stage 3: Dùng NORMALIZER_PROMPT để chuẩn hóa dữ liệu"""
-        # Gửi kèm hướng dẫn (System) và dữ liệu thô (User)
-        user_content = f"Raw findings to translate: {findings}"
+    # def normalize(self, findings):
+    #     """Stage 3: Dùng NORMALIZER_PROMPT để chuẩn hóa dữ liệu"""
+    #     # Gửi kèm hướng dẫn (System) và dữ liệu thô (User)
+    #     user_content = f"Raw findings to translate: {findings}"
         
-        return self.ask(
-            system_prompt=NORMALIZER_PROMPT, 
-            user_content=user_content,
-            model=self.lite_model # Dùng model rẻ
-        )
+    #     return self.ask(
+    #         system_prompt=NORMALIZER_PROMPT, 
+    #         user_content=user_content,
+    #         model=self.lite_model # Dùng model rẻ
+    #     )
 
     def audit(self, normalized_data):
         """Stage 4: Dùng AGENT_SYSTEM_PROMPT để thiết kế kịch bản tấn công"""
