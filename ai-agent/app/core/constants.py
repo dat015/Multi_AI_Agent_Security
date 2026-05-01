@@ -58,35 +58,39 @@ You are ONLY allowed to identify vulnerabilities based on this strict mapping. D
 2. You MUST ONLY select your final 'primary_vulnerability' from these Candidate Tags. If the data does not strictly meet the definition in the dictionary, return "None".
 3. Exclude technical injection (SQLi/XSS). Focus ONLY on Logical Integrity.
 
-# OUTPUT REQUIREMENTS (Strict JSON Array):
-You will receive multiple API endpoints. You MUST return a JSON ARRAY `[ ... ]` containing one distinct object for EACH endpoint analyzed. 
+# OUTPUT REQUIREMENTS (Strict JSON Format):
+You will receive multiple API endpoints. You MUST return a single JSON OBJECT with exactly ONE root key named `"audits"`. 
+CRITICAL: Do NOT use keys like "audit", "audit_result", or "data". The root key MUST strictly be `"audits"`.
+The value of `"audits"` MUST be a JSON ARRAY containing one distinct object for EACH endpoint analyzed.
 CRITICAL: Do NOT combine or group methods/paths (e.g., Never write "GET/POST"). Each API must have its own separate evaluation object.
 
-[
-  {{
-    "reasoning_path": {{
-      "1_hypothesis": "If an attacker wants to bypass logic here, what exact parameter/path would they manipulate based on the Candidate Tags?",
-      "2_verification": "Does the provided schema actually allow this manipulation? (Check data types, paths, and auth).",
-      "3_conclusion": "Does this strictly match the OWASP definition? Is it valid or a False Positive?"
-    }},
-    "assessment_summary": {{
-      "method": "Exact HTTP Method (e.g., GET)",
-      "path": "Exact API Path",
-      "primary_vulnerability": "MUST exactly match an OWASP Tag (e.g., API1) OR 'None'",
-      "confidence_score": 0.0-1.0
-    }},
-    "risk_analysis": {{
-      "score": 0,
-      "impact": "Detailed business and data impact"
-    }},
-    "verification_plan": {{
-      "setup": "Identify the required state (e.g., Need User A and User B tokens).",
-      "steps": [
-        "Step 1: ...",
-        "Step 2: ..."
-      ],
-      "expected_proof": "What exact HTTP status code or response data proves the vulnerability?"
+{{
+  "audits": [
+    {{
+      "reasoning_path": {{
+        "1_hypothesis": "If an attacker wants to bypass logic here, what exact parameter/path would they manipulate based on the Candidate Tags?",
+        "2_verification": "Does the provided schema actually allow this manipulation? (Check data types, paths, and auth).",
+        "3_conclusion": "Does this strictly match the OWASP definition? Is it valid or a False Positive?"
+      }},
+      "assessment_summary": {{
+        "method": "Exact HTTP Method (e.g., GET)",
+        "path": "Exact API Path",
+        "primary_vulnerability": "MUST exactly match an OWASP Tag (e.g., API1) OR 'None'",
+        "confidence_score": 0.0-1.0
+      }},
+      "risk_analysis": {{
+        "score": 0,
+        "impact": "Detailed business and data impact"
+      }},
+      "verification_plan": {{
+        "setup": "Identify the required state (e.g., Need User A and User B tokens).",
+        "steps": [
+          "Step 1: ...",
+          "Step 2: ..."
+        ],
+        "expected_proof": "What exact HTTP status code or response data proves the vulnerability?"
+      }}
     }}
-  }}
-]
+  ]
+}}
 """
