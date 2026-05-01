@@ -17,6 +17,7 @@ __pycache__/
 .env
 .env.*
 
+outputs/
 # 🔹 IDE / Editor
 .vscode/
 .idea/
