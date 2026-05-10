@@ -1,212 +1,284 @@
 {
-  "openapi": "3.0.1",
+  "openapi": "3.0.3",
   "info": {
-    "title": "SmartLogistics Enterprise Suite",
-    "description": "Hệ thống quản lý vận tải tích hợp (Internal & Partner API)",
-    "version": "2.0.4-beta"
-  },
-  "paths": {
-    "/auth/v1/login": {
-      "post": {
-        "tags": ["Identity"],
-        "summary": "Đăng nhập hệ thống",
-        "responses": { "200": { "description": "Trả về JWT Token" } }
-      }
-    },
-    "/auth/v2/register": {
-      "post": {
-        "tags": ["Identity"],
-        "summary": "Đăng ký tài khoản tài xế/đối tác",
-        "responses": { "201": { "description": "Tạo tài khoản thành công" } }
-      }
-    },
-    "/api/v2/profile/me": {
-      "get": {
-        "tags": ["User"],
-        "summary": "Lấy thông tin cá nhân hiện tại",
-        "security": [{ "BearerAuth": [] }],
-        "responses": { "200": { "description": "OK" } }
-      }
-    },
-    "/api/v1/shipments": {
-      "get": {
-        "tags": ["Operations"],
-        "summary": "Liệt kê danh sách vận đơn (Cẩn thận: Thiếu phân trang)",
-        "responses": { "200": { "description": "Trả về mảng Shipment" } }
-      },
-      "post": {
-        "tags": ["Operations"],
-        "summary": "Tạo mới một vận đơn (BOPLA Risk)",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": { "$ref": "#/components/schemas/ShipmentRequest" }
-            }
-          }
-        }
-      }
-    },
-    "/api/v2/transport/shipments/{sid}": {
-      "get": {
-        "tags": ["Operations"],
-        "summary": "Truy xuất chi tiết vận đơn (BOLA Target)",
-        "parameters": [{ "name": "sid", "in": "path", "required": true, "schema": { "type": "string" } }]
-      },
-      "patch": {
-        "tags": ["Operations"],
-        "summary": "Cập nhật trạng thái/tài xế cho vận đơn (BOLA/BOPLA)",
-        "parameters": [{ "name": "sid", "in": "path", "required": true, "schema": { "type": "string" } }]
-      }
-    },
-    "/api/v2/fleet/drivers/{u_ref}": {
-      "get": {
-        "tags": ["Fleet"],
-        "summary": "Lấy thông tin tài xế qua mã tham chiếu",
-        "parameters": [{ "name": "u_ref", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }]
-      }
-    },
-    "/management/internal/fleet/config": {
-      "get": {
-        "tags": ["Admin"],
-        "summary": "Cấu hình hệ thống GPS nội bộ (BFLA Target)",
-        "responses": { "200": { "description": "Sensitive Data" } }
-      }
-    },
-    "/management/finance/revenue/export": {
-      "post": {
-        "tags": ["Finance"],
-        "summary": "Xuất báo cáo doanh thu (Business Flow Risk)",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": { "year": { "type": "integer" }, "format": { "type": "string" } }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v2/webhooks/register": {
-      "post": {
-        "tags": ["Integrations"],
-        "summary": "Đăng ký webhook nhận thông báo (SSRF Risk)",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": { "callback_url": { "type": "string", "format": "uri" } }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/debug/dump-logs": {
-      "get": {
-        "tags": ["Debug"],
-        "summary": "Lấy log hệ thống cũ (Inventory API 9)",
-        "parameters": [{ "name": "file_path", "in": "query", "schema": { "type": "string" } }]
-      }
-    },
-    "/api/v2/warehouse/stock/{item_id}": {
-      "put": {
-        "tags": ["Warehouse"],
-        "summary": "Cập nhật tồn kho (BOLA)",
-        "parameters": [{ "name": "item_id", "in": "path", "required": true, "schema": { "type": "integer" } }]
-      }
-    },
-    "/api/v2/notifications/broadcast": {
-      "post": {
-        "tags": ["System"],
-        "summary": "Gửi thông báo toàn hệ thống (BFLA)",
-        "responses": { "200": { "description": "Sent" } }
-      }
-    },
-    "/api/v1/legacy-reports/{report_id}": {
-      "delete": {
-        "tags": ["Debug"],
-        "summary": "Xóa báo cáo cũ (Inventory)",
-        "parameters": [{ "name": "report_id", "in": "path", "required": true, "schema": { "type": "string" } }]
-      }
-    },
-    "/api/v2/partners/external-sync": {
-      "post": {
-        "tags": ["Integrations"],
-        "summary": "Đồng bộ với API bên thứ 3 (Unsafe Consumption API 10)",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": { "remote_api_key": { "type": "string" }, "provider": { "type": "string" } }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v2/documents/upload": {
-      "post": {
-        "tags": ["User"],
-        "summary": "Tải lên chứng từ vận tải (Resource Consumption)",
-        "responses": { "200": { "description": "Success" } }
-      }
-    },
-    "/api/v2/shipments/{sid}/cancel": {
-      "post": {
-        "tags": ["Operations"],
-        "summary": "Hủy đơn hàng (Sensitive Business Flow)",
-        "parameters": [{ "name": "sid", "in": "path", "required": true, "schema": { "type": "string" } }]
-      }
-    },
-    "/management/users/{u_ref}/reset-mfa": {
-      "post": {
-        "tags": ["Admin"],
-        "summary": "Reset mã MFA cho người dùng (BFLA)",
-        "parameters": [{ "name": "u_ref", "in": "path", "required": true, "schema": { "type": "string" } }]
-      }
-    },
-    "/api/v1/system/status": {
-      "get": {
-        "tags": ["System"],
-        "summary": "Kiểm tra trạng thái server (Public)",
-        "responses": { "200": { "description": "Healthy" } }
-      }
-    },
-    "/api/v2/contracts/sign": {
-      "post": {
-        "tags": ["Operations"],
-        "summary": "Ký hợp đồng điện tử (Sensitive Business Flow)",
-        "responses": { "200": { "description": "Signed" } }
-      }
-    },
-    "/api/v2/search": {
-      "get": {
-        "tags": ["System"],
-        "summary": "Tìm kiếm đơn hàng toàn cầu (Resource Consumption Risk)",
-        "parameters": [{ "name": "q", "in": "query", "schema": { "type": "string" } }]
-      }
+    "title": "BookStore API",
+    "description": "API quản lý cửa hàng sách trực tuyến",
+    "version": "1.2.3",
+    "contact": {
+      "name": "Dev Team",
+      "email": "dev@bookstore.local"
     }
   },
+  "servers": [
+    {
+      "url": "https://api.bookstore.local/v1",
+      "description": "Production"
+    },
+    {
+      "url": "https://dev.bookstore.local/v2",
+      "description": "Development"
+    }
+  ],
   "components": {
     "schemas": {
-      "ShipmentRequest": {
+      "User": {
         "type": "object",
         "properties": {
-          "origin": { "type": "string" },
-          "destination": { "type": "string" },
-          "weight": { "type": "number" },
-          "driver_pk_id": { "type": "string", "format": "uuid" },
-          "is_admin_override": { "type": "boolean", "default": false },
-          "metadata": { "type": "object" }
+          "id": { "type": "integer" },
+          "username": { "type": "string" },
+          "email": { "type": "string" },
+          "password": { "type": "string" },
+          "role": {
+            "type": "string",
+            "enum": ["user", "admin", "superadmin"]
+          },
+          "isAdmin": { "type": "boolean" }
+        }
+      },
+      "Book": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer" },
+          "title": { "type": "string" },
+          "author": { "type": "string" },
+          "price": { "type": "number" },
+          "stock": { "type": "integer" },
+          "secretNote": { "type": "string" }
+        }
+      },
+      "Order": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer" },
+          "userId": { "type": "integer" },
+          "bookId": { "type": "integer" },
+          "quantity": { "type": "integer" },
+          "totalPrice": { "type": "number" }
         }
       }
     },
     "securitySchemes": {
-      "BearerAuth": { "type": "http", "scheme": "bearer", "bearerFormat": "JWT" }
+      "BearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
+      }
+    }
+  },
+  "paths": {
+    "/health": {
+      "get": {
+        "summary": "Health check",
+        "responses": {
+          "200": { "description": "OK" }
+        }
+      }
+    },
+    "/books": {
+      "get": {
+        "summary": "Lấy danh sách sách",
+        "parameters": [
+          { "name": "page", "in": "query", "schema": { "type": "integer", "default": 1 } },
+          { "name": "limit", "in": "query", "schema": { "type": "integer", "default": 20 } }
+        ],
+        "responses": {
+          "200": { "description": "Success" }
+        }
+      }
+    },
+    "/auth/login": {
+      "post": {
+        "summary": "Đăng nhập",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "email": { "type": "string" },
+                  "password": { "type": "string" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Login successful",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "token": { "type": "string" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/users": {
+      "get": {
+        "summary": "Lấy danh sách người dùng",
+        "responses": {
+          "200": { "description": "List users" }
+        }
+      }
+    },
+    "/users/{id}": {
+      "get": {
+        "summary": "Lấy thông tin người dùng",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "integer" }
+          }
+        ],
+        "responses": {
+          "200": { "description": "User info" }
+        }
+      }
+    },
+    "/users/register": {
+      "post": {
+        "summary": "Đăng ký tài khoản",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/User" }
+            }
+          }
+        },
+        "responses": {
+          "201": { "description": "Created" }
+        }
+      }
+    },
+    "/profile": {
+      "get": {
+        "summary": "Lấy thông tin profile",
+        "responses": {
+          "200": { "description": "Profile" }
+        }
+      }
+    },
+    "/books/admin": {
+      "get": {
+        "summary": "Quản lý sách (admin)",
+        "responses": {
+          "200": { "description": "Success" }
+        }
+      }
+    },
+    "/orders": {
+      "post": {
+        "summary": "Tạo đơn hàng mới",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/Order" }
+            }
+          }
+        },
+        "responses": {
+          "201": { "description": "Order created" }
+        }
+      }
+    },
+    "/orders/{orderId}": {
+      "delete": {
+        "summary": "Hủy đơn hàng",
+        "parameters": [
+          {
+            "name": "orderId",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "integer" }
+          }
+        ],
+        "responses": {
+          "200": { "description": "Deleted" }
+        }
+      }
+    },
+    "/search": {
+      "get": {
+        "summary": "Tìm kiếm sách",
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "schema": { "type": "string" },
+            "description": "Từ khóa tìm kiếm"
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "schema": { "type": "integer", "default": 1 }
+          }
+        ],
+        "responses": {
+          "200": { "description": "Results" }
+        }
+      }
+    },
+    "/proxy/image": {
+      "get": {
+        "summary": "Lấy hình ảnh từ URL",
+        "parameters": [
+          {
+            "name": "url",
+            "in": "query",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": { "description": "Image" }
+        }
+      }
+    },
+    "/admin/debug": {
+      "get": {
+        "summary": "Debug information",
+        "responses": {
+          "200": { "description": "Debug info" }
+        }
+      }
+    },
+    "/api/v1/old/books": {
+      "get": {
+        "summary": "Lấy danh sách sách (phiên bản cũ)",
+        "responses": {
+          "200": { "description": "Success" }
+        }
+      }
+    },
+    "/webhook/external": {
+      "post": {
+        "summary": "Nhận webhook từ bên thứ ba",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Received" }
+        }
+      }
     }
   }
 }

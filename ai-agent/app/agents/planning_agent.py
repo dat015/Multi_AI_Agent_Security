@@ -1,14 +1,13 @@
 import os
 
 from langchain_openai import ChatOpenAI
-from langchain_core.prompts import ChatPromptTemplate
 from pydantic import BaseModel, Field
 from typing import List, Dict, Any
 import json
 import logging
 from app.services.llm_service import LLMService
-# 1. IMPORT THÊM SETTINGS (Giống file recon)
 from app.core.config import settings 
+from app.core.constants import AGENT_SYSTEM_PROMPT
 
 # Định nghĩa cấu trúc dữ liệu đầu ra bắt buộc bằng Pydantic
 class TestStep(BaseModel):
@@ -24,12 +23,10 @@ class TestPlan(BaseModel):
     test_steps: List[TestStep]
     max_iterations: int = Field(default=5)
 
-# 2. KHỞI TẠO LLM TRỎ VỀ GROQ
-# Thay vì dùng gpt-4o, ta truyền base_url và api_key của Groq vào
 llm = ChatOpenAI(
     api_key=settings.GROQ_API_KEY,
     base_url=settings.URL_LLM,
-    model=settings.LARGE_MODEL_NAME, # Đảm bảo model này hỗ trợ tool calling (ví dụ: llama3-70b-8192)
+    model=settings.LARGE_MODEL_NAME,
     temperature=0.1
 )
 
@@ -52,16 +49,8 @@ def load_owasp_kb(owasp_id: str) -> dict:
         print(f"Lỗi khi đọc file owasp_kb.json: {e}")
         return {}
 
-# 3. CẬP NHẬT PROMPT
-# Lưu ý: Khi dùng LLM mã nguồn mở qua Groq, bạn CẦN nhắc nhở nó trả về JSON rõ ràng hơn GPT-4.
-PLANNING_PROMPT = ChatPromptTemplate.from_messages([
-    ("system", """Bạn là security tester chuyên nghiệp. Dựa trên thông tin endpoint và knowledge base OWASP, hãy sinh kế hoạch kiểm thử chi tiết.
-Tập trung vào việc tạo các payload để kiểm tra quyền truy cập hoặc logic nghiệp vụ.
-BẮT BUỘC trả về kết quả dưới định dạng chuẩn JSON."""),
-    ("human", "Endpoint: {endpoint}\nOWASP KB: {kb_context}")
-])
-
 def plan_for_endpoint(recon_item: dict) -> list:
+    print('plan for', recon_item)
     summary = recon_item.get("assessment_summary", {})
     path = summary.get("path")
     method = summary.get("method")
@@ -82,11 +71,10 @@ def plan_for_endpoint(recon_item: dict) -> list:
             "recon_verification_plan": verification_plan
         }
 
-        # Khai báo messages cho prompt
         prompt_messages = [
-            ("system", """Bạn là security tester chuyên nghiệp. Dựa trên thông tin endpoint và knowledge base OWASP, hãy sinh kế hoạch kiểm thử chi tiết.
-            Tập trung vào việc tạo các payload để kiểm tra quyền truy cập hoặc logic nghiệp vụ.
-            BẮT BUỘC trả về kết quả dưới định dạng chuẩn JSON."""),
+            ("system", """You are a professional security tester. Based on the endpoint information and the OWASP knowledge base, generate a detailed security testing plan.
+        Focus on creating payloads to test authorization controls and business logic integrity.
+        You MUST return the result in valid JSON format."""),
             ("human", "Endpoint: {endpoint}\nOWASP KB: {kb_context}")
         ]
 
@@ -95,16 +83,14 @@ def plan_for_endpoint(recon_item: dict) -> list:
             "kb_context": json.dumps(kb_context, ensure_ascii=False)
         }
 
-        # GỌI LLM QUA SERVICE
         result = LLMService.generate_structured(
             self=LLMService(),
             prompt_messages=prompt_messages,
             input_variables=input_vars,
             pydantic_schema=TestPlan,
-            fallback_method="function_calling" # Xử lý lỗi 400 json_schema của Groq
+            fallback_method="function_calling" 
         )
 
-        # Xử lý kết quả Pydantic (Đã fix lỗi list/dict trước đó)
         if isinstance(result, list):
             result = result[0] if len(result) > 0 else None
         if isinstance(result, dict):
@@ -120,28 +106,31 @@ def plan_for_endpoint(recon_item: dict) -> list:
         logging.error(f"Lỗi khi sinh plan cho {path} với {vuln_type}: {e}")
             
     return all_steps
+
 def planning_node(state: dict) -> dict:
-    # State này chứa output từ Recon Node
-    filtered = state.get("filtered_endpoints", {})
+    audits_list = state.get("filtered_endpoints", [])
+    
+    print(f"Planning Agent nhận được {len(audits_list)} endpoint objects từ Recon.")
+    
+    if audits_list:
+        print(f"Sample endpoint object: {json.dumps(audits_list[0], ensure_ascii=False, indent=2)}")
+    
     full_test_plan = []
     
-    # Lấy mảng audits bằng .get() an toàn thay vì dot notation
-    audits_list = filtered.get("audits", [])
-    
-    print(f"Planning Agent nhận {len(audits_list)} endpoint objects từ Recon.")
-    
     for item in audits_list:
-        # item lúc này tương ứng với 1 object trong mảng của Recon
-        plans = plan_for_endpoint(item)
-        full_test_plan.extend(plans)
+        plans = plan_for_endpoint(item) 
+        print(f"Đã sinh được {len(plans)} test steps cho endpoint {item.get('assessment_summary', {}).get('path')}")
+        if plans:
+             full_test_plan.extend(plans)
+        
     output_dir = "outputs"
     os.makedirs(output_dir, exist_ok=True)
     
     file_path = os.path.join(output_dir, "test_plan.json")
-    # Lưu file backup
+    
     with open(file_path, "w", encoding="utf-8") as f:
         json.dump(full_test_plan, f, ensure_ascii=False, indent=2)
-        
+    
     print(f"Đã sinh test plan thành công. Tổng {len(full_test_plan)} test scenarios.")
     
     return {
