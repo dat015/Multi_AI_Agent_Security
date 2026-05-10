@@ -2,7 +2,7 @@
   {
     "owasp_id": "API1",
     "name": "Broken Object Level Authorization",
-    "description": "Lỗ hổng xảy ra khi API không kiểm tra xem user hiện tại có quyền truy cập vào object (dữ liệu) được yêu cầu thông qua ID hay không.",
+    "description": "Object level authorization is an access control mechanism that is usually implemented at the code level to validate that a user can only access the objects that they should have permissions to access. Every API endpoint that receives an ID of an object, and performs any action on the object, should implement object-level authorization checks. The checks should validate that the logged-in user has permissions to perform the requested action on the requested object. Failures in this mechanism typically lead to unauthorized information disclosure, modification, or destruction of all data. Comparing the user ID of the current session (e.g. by extracting it from the JWT token) with the vulnerable ID parameter isn't a sufficient solution to solve Broken Object Level Authorization (BOLA). This approach could address only a small subset of cases. In the case of BOLA, it's by design that the user will have access to the vulnerable API endpoint/function. The violation happens at the object level, by manipulating the ID. If an attacker manages to access an API endpoint/function they should not have access to - this is a case of Broken Function Level Authorization (BFLA) rather than BOLA.",
 
     "recon_signatures": {
       "target_methods": ["GET", "PUT", "PATCH", "DELETE"],
@@ -45,7 +45,7 @@
   {
     "owasp_id": "API2",
     "name": "Broken Authentication",
-    "description": "Lỗ hổng xảy ra khi cơ chế xác thực được triển khai không đúng, cho phép attacker đánh cắp token hoặc giả mạo danh tính người dùng khác.",
+    "description": "Authentication endpoints and flows are critical assets that must be protected. Forgot password and reset password functionalities should also be treated as authentication mechanisms. An API is considered vulnerable if it permits credential stuffing attacks using lists of valid usernames and passwords, allows brute force attacks against user accounts without captcha or account lockout mechanisms, permits weak passwords, sends sensitive authentication information such as passwords or tokens in URLs, allows sensitive operations like changing email addresses or passwords without password confirmation, fails to validate the authenticity of tokens, accepts unsigned or weakly signed JWT tokens such as {\"alg\":\"none\"}, does not validate JWT expiration dates, stores passwords in plain text or using weak hashing mechanisms, or uses weak encryption keys. In a microservice architecture, vulnerabilities also include allowing access from other microservices without authentication and using weak or predictable authentication tokens.",
 
     "recon_signatures": {
       "target_methods": ["POST", "PUT", "PATCH", "DELETE", "GET"],
@@ -94,7 +94,7 @@
   {
     "owasp_id": "API3",
     "name": "Broken Object Property Level Authorization",
-    "description": "Lỗ hổng kết hợp giữa lộ dữ liệu quá mức và gán hàng loạt, xảy ra khi API không kiểm tra quyền truy cập ở cấp độ thuộc tính của object, cho phép đọc hoặc ghi dữ liệu không được phép.",
+    "description": "When allowing a user to access an object using an API endpoint, it is important to validate that the user has permission to access the specific object properties they are attempting to read or modify. An API endpoint is considered vulnerable if it exposes sensitive object properties that should not be accessible to the user, previously referred to as Excessive Data Exposure, or if it allows a user to change, add, or delete sensitive object properties that the user should not be authorized to modify, previously referred to as Mass Assignment",
 
     "recon_signatures": {
       "target_methods": ["GET", "PUT", "PATCH", "POST"],
@@ -139,8 +139,7 @@
   {
     "owasp_id": "API4",
     "name": "Unrestricted Resource Consumption",
-    "description": "Lỗ hổng xảy ra khi API không giới hạn tài nguyên (số lượng request, kích thước payload, bộ nhớ xử lý, băng thông) dẫn đến DoS hoặc tăng chi phí vận hành (ví dụ: SMS, email, API tốn phí).",
-
+    "description": "Processing API requests requires resources such as network bandwidth, CPU, memory, storage, and third-party service usage. Some resources may incur direct costs through external integrations such as email, SMS, phone call services, or biometric validation providers. An API is considered vulnerable if resource consumption limits are missing or configured inappropriately, such as execution timeouts, maximum allocable memory, maximum number of file descriptors, maximum number of processes, maximum upload file size, maximum number of operations allowed in a single request (for example GraphQL batching), maximum number of records returned per request-response, or third-party service provider spending limits.",
     "recon_signatures": {
       "target_methods": ["GET", "POST", "PUT", "DELETE", "PATCH"],
       "openapi_patterns": [
@@ -180,8 +179,7 @@
   {
     "owasp_id": "API5",
     "name": "Broken Function Level Authorization",
-    "description": "Lỗ hổng xảy ra khi phân quyền chức năng (function/endpoint level) không được kiểm tra đúng, cho phép user thường truy cập các API chỉ dành cho admin hoặc role cao hơn.",
-
+    "description": "Broken Function Level Authorization vulnerabilities occur when an API fails to properly enforce authorization checks for different functions, roles, or user groups. Detecting these issues requires analyzing the authorization mechanism while considering user hierarchies and access privileges. An API is considered vulnerable if regular users can access administrative endpoints, if users can perform sensitive actions such as creating, modifying, or deleting resources simply by changing the HTTP method (for example from GET to DELETE), or if users from one group can access functions intended only for another group by guessing endpoint URLs or parameters such as /api/v1/users/export_all. Developers should not assume that administrative endpoints are protected solely because of their URL paths, since administrative functionality may appear alongside regular endpoints under common routes such as /api/users instead of dedicated paths like /api/admins.",
     "recon_signatures": {
       "target_methods": ["GET", "POST", "PUT", "DELETE", "PATCH"],
       "openapi_patterns": [
@@ -219,8 +217,7 @@
   {
     "owasp_id": "API6",
     "name": "Unrestricted Access to Sensitive Business Flows",
-    "description": "Lỗ hổng xảy ra khi API không có cơ chế bù trừ (compensating controls) để ngăn chặn tự động hóa gây hại cho luồng nghiệp vụ nhạy cảm, như mua vé, đặt hàng số lượng lớn, vote, đăng bình luận spam.",
-
+    "description": "When designing an API endpoint, it is important to understand the business flow it exposes and evaluate whether excessive or automated access could negatively impact the business. Sensitive business flows include actions such as purchasing products, creating comments or posts, making reservations, or any operation that could be abused at scale. For example, attackers may buy out high-demand products for resale, spam a platform with automated content, or reserve all available booking slots to deny service to legitimate users. The definition of excessive access may vary depending on the industry or business context. An API endpoint is considered vulnerable if it exposes a sensitive business flow without implementing appropriate restrictions such as rate limiting, anti-automation protections, usage quotas, or additional authorization controls.",
     "recon_signatures": {
       "target_methods": ["POST", "PUT", "PATCH", "DELETE"],
       "openapi_patterns": [
@@ -259,8 +256,7 @@
   {
     "owasp_id": "API7",
     "name": "Server Side Request Forgery (SSRF)",
-    "description": "Lỗ hổng xảy ra khi API fetch một remote resource từ URL do người dùng cung cấp mà không kiểm tra hợp lệ, cho phép attacker tấn công vào internal network, metadata cloud, hoặc vượt qua firewall.",
-
+    "description": "Server-Side Request Forgery (SSRF) vulnerabilities occur when an API fetches remote resources based on user-supplied input without properly validating or restricting the target URL. This allows attackers to manipulate the application into sending crafted requests to unintended internal or external destinations, including systems protected by firewalls or VPNs. Modern application development practices such as webhooks, file imports from URLs, custom SSO integrations, and URL preview features increase the likelihood of SSRF vulnerabilities because they commonly rely on external resource fetching. Additionally, modern infrastructures including cloud environments, Kubernetes, and Docker often expose internal management interfaces over predictable HTTP endpoints, making SSRF attacks more dangerous. APIs are considered vulnerable if they allow unvalidated outbound requests that can access unauthorized resources, internal services, metadata endpoints, or sensitive network locations. Since SSRF risks cannot always be fully eliminated, mitigation strategies should balance security protections with business requirements and operational needs.",
     "recon_signatures": {
       "target_methods": ["GET", "POST", "PUT", "PATCH"],
       "openapi_patterns": [
@@ -299,7 +295,7 @@
   {
     "owasp_id": "API8",
     "name": "Security Misconfiguration",
-    "description": "Lỗ hổng xảy ra khi API hoặc hệ thống hỗ trợ có cấu hình bảo mật sai, thiếu hoặc không được kiểm tra định kỳ (ví dụ: CORS sai, TLS thiếu, stack trace trong lỗi, phương thức HTTP không cần thiết).",
+    "description": "An API is vulnerable to Security Misconfiguration when security hardening measures are missing, improperly implemented, or inconsistently configured across any part of the API stack. Vulnerabilities may exist if cloud service permissions are configured incorrectly, systems are outdated or missing the latest security patches, unnecessary features such as unused HTTP methods or verbose logging are enabled, or inconsistencies exist in how incoming requests are processed across HTTP server chains. Additional risks include missing Transport Layer Security (TLS), absence of proper security headers or cache control directives, missing or improperly configured Cross-Origin Resource Sharing (CORS) policies, and error messages that expose sensitive information such as stack traces or internal implementation details.",
 
     "recon_signatures": {
       "target_methods": [
@@ -348,7 +344,7 @@
   {
     "owasp_id": "API9",
     "name": "Improper Inventory Management",
-    "description": "Lỗ hổng xảy ra khi tổ chức không quản lý tốt danh sách các API host, phiên bản, endpoint, dẫn đến việc để lộ các API cũ, không được vá lỗi hoặc dùng chung dữ liệu nhạy cảm với bên thứ ba không cần thiết.",
+    "description": "The distributed and interconnected nature of modern APIs and applications introduces challenges related to visibility, documentation, version management, and data flow tracking. Organizations must maintain accurate inventories of APIs, endpoints, versions, environments, and third-party integrations to reduce security risks and manage exposure effectively. An API has a documentation blindspot when the purpose of an API host is unclear, when there is no clear information about the environment it operates in (such as production, staging, testing, or development), who is allowed network access, or which API version is currently running. Additional risks exist when documentation is missing or outdated, when there is no retirement plan for deprecated API versions, or when API host inventories are incomplete or obsolete. An API also has a data flow blindspot when sensitive data is shared with third parties without proper business justification, approval, inventory tracking, or visibility into the exact types of sensitive data being transmitted. These issues increase the attack surface, complicate incident response efforts, and reduce organizational awareness of security risks.",
 
     "recon_signatures": {
       "target_methods": ["GET", "POST"],
@@ -388,8 +384,7 @@
   {
     "owasp_id": "API10",
     "name": "Unsafe Consumption of APIs",
-    "description": "Lỗ hổng xảy ra khi API mù quáng tin tưởng dữ liệu nhận từ API bên thứ ba, dẫn đến không kiểm tra/xác thực đầu vào đúng cách, gây ra các lỗ hổng như injection, SSRF, hoặc lộ dữ liệu qua redirect.",
-
+    "description": "Modern applications frequently integrate with third-party APIs and external services. Developers often place excessive trust in data received from these external sources, especially when the APIs belong to well-known providers, leading to weaker security controls such as insufficient validation and sanitization. An API is considered vulnerable if it communicates with third-party APIs over unencrypted channels, fails to properly validate or sanitize data received from external services before processing or forwarding it to downstream components, blindly follows HTTP redirections, does not restrict the amount of resources allocated for processing third-party responses, or fails to implement proper timeout mechanisms for interactions with external services. These weaknesses can expose the application to attacks such as malicious payload injection, denial of service, data leakage, and unauthorized resource consumption.",
     "recon_signatures": {
       "target_methods": ["GET", "POST", "PUT", "PATCH", "DELETE"],
       "openapi_patterns": [

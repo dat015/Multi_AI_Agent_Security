@@ -29,16 +29,13 @@ class SwaggerParser:
 
     @staticmethod
     def parse(spec_content: str, fmt: str):
-        # 1. Parse từ string (KHÔNG dùng open)
         if fmt == "json":
             raw_spec = json.loads(spec_content)
         else:
             raw_spec = yaml.safe_load(spec_content)
 
-        # 2. Fix cấu trúc
         fixed_spec = SwaggerParser._fix_missing_responses(raw_spec)
 
-        # 3. Resolve $ref
         parser = ResolvingParser(spec_string=json.dumps(fixed_spec))
         
         return parser.specification

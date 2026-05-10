@@ -7,7 +7,7 @@ from app.modules.parser.swagger_parser import SwaggerParser
 from app.security.security_analyzer import SecurityAnalyzer
 from app.core.constants import SWAGGER_DEFAULT_PATH
 from app.modules.parser.swagger_extractor import SwaggerExtractor
-
+from app.helper.markdown_chunker import chunk_endpoints_to_markdown
 class ReconAgent:
     def __init__(self):
         self.client = OpenAI(
@@ -22,13 +22,17 @@ class ReconAgent:
             return json.load(f)
 
     def audit(self, normalized_data):
-        """ Dùng AGENT_SYSTEM_PROMPT để thiết kế kịch bản tấn công"""
-        user_content = f"Design attack scenarios for these targets: {normalized_data}"
+        user_content = (
+            f"Here are the target API endpoints formatted in Markdown:\n\n"
+            f"{normalized_data}\n\n"
+            f"Analyze these targets and evaluate them strictly according to the System Prompt instructions. "
+            f"Remember: Output MUST be a JSON object with the root key 'audits'."
+        )
         
         return self.ask(
             system_prompt=AGENT_SYSTEM_PROMPT, 
             user_content=user_content,
-            model=self.expert_model # Dùng model xịn
+            model=self.expert_model
         )
     
     def ask(self, system_prompt: str, user_content: str, model: str):
@@ -39,7 +43,6 @@ class ReconAgent:
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_content}
                 ],
-                # Lưu ý: Khi dùng json_object, prompt PHẢI có chữ "JSON"
                 response_format={ "type": "json_object" } 
             )
             return response.choices[0].message.content
@@ -47,9 +50,6 @@ class ReconAgent:
             return f"Lỗi Groq: {str(e)}"
 
 
-# =====================================================================
-# HÀM NÀY PHẢI NẰM NGOÀI CLASS (SÁT MÉP LỀ TRÁI)
-# =====================================================================
 def recon_node(state):
     print("--- CHẠY RECON NODE ---")
 
@@ -59,17 +59,48 @@ def recon_node(state):
     spec = SwaggerParser.parse(spec_content, spec_format)
 
     parsed_data = SwaggerExtractor.extract(spec)
+    for ep in parsed_data.endpoints:
+        print(f"{ep.method} {ep.path} (Auth: {ep.requires_auth}) - Params: {[p.name for p in ep.parameters]}")
     potential_threats = SecurityAnalyzer.analyze(parsed_data.endpoints)
+    markdown_chunks = chunk_endpoints_to_markdown(potential_threats, chunk_size=10)
+    print(f"Đã chia thành {len(markdown_chunks)} chunks để xử lý.")
 
     agent = ReconAgent()
-    result = agent.audit(normalized_data=potential_threats)
-    print("KẾT QUẢ RECON:", result)
+    aggregated_scenarios = [] # Nơi chứa toàn bộ kịch bản tấn công của tất cả chunks
 
-    try:
-        parsed = json.loads(result)
-    except:
-        parsed = []
+    # 3. Duyệt qua từng chunk và gọi LLM
+    for i, chunk in enumerate(markdown_chunks):
+        print(f"> Đang Audit Chunk {i+1}/{len(markdown_chunks)}...")
+        
+        # Đưa Markdown vào Agent
+        result_str = agent.audit(normalized_data=chunk["page_content"])
+        
+        try:
+            parsed_json = json.loads(result_str)
+            
+            # Lấy list 'scenarios' mà ta đã yêu cầu LLM tạo ra ở hàm audit
+            scenarios = parsed_json.get("audits", [])
+            if scenarios:
+                aggregated_scenarios.extend(scenarios)
+            else:
+                # Fallback: nếu LLM tự đẻ ra key khác chứa list
+                for key, val in parsed_json.items():
+                    if isinstance(val, list):
+                        aggregated_scenarios.extend(val)
+                        break
+
+        except json.JSONDecodeError:
+            print(f"Lỗi parse JSON ở Chunk {i+1}. Raw output: {result_str}")
+        except Exception as e:
+            print(f"Lỗi không xác định ở Chunk {i+1}: {e}")
+
+    print(f"KẾT QUẢ RECON: Thu thập được tổng cộng {len(aggregated_scenarios)} attack scenarios.")
+
     return {
         **state,
-        "filtered_endpoints": parsed 
+        # Trả về data đã được gom lại từ tất cả các chunk
+        "filtered_endpoints": aggregated_scenarios, 
+        
+        # (Tùy chọn) Lưu lại chunks thô nếu các Node sau trong LangGraph cần dùng
+        "markdown_chunks": markdown_chunks 
     }

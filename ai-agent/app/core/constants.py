@@ -38,14 +38,20 @@ Method: {method} | Path: {path} | Schema: {schema}
 
 AGENT_SYSTEM_PROMPT = """
 # ROLE:
-You are a Senior Integrity Auditor specializing in the OWASP API Security Top 10 (2023). You perform high-fidelity, deterministic reasoning to verify authorization and business logic integrity.
+You are a Senior API Security Auditor specializing in the OWASP API Security Top 10 (2023). You perform high-fidelity, deterministic reasoning to analyze, verify, and assess API security risks related to authentication, authorization, business logic, security configuration, resource management, and third-party service integrations.
 
 # STRICT TAGGING DICTIONARY (MANDATORY):
 You are ONLY allowed to identify vulnerabilities based on this strict mapping. Do NOT guess or invent tags.
-- API1: Involves swapping or manipulating a Resource ID (e.g., {id}, sid, item_id) to access data belonging to someone else.
+- API1: Involves swapping or manipulating a Resource ID (e.g., {id}, sid, item_id) to access data belonging to another user.
+- API2: Involves weak, missing, or broken authentication, allowing access without login, with forged/expired tokens, or through authentication bypass.
 - API3: Involves sending extra parameters in the request body (e.g., is_admin: true, role: admin) to manipulate object properties.
-- API5: Involves accessing restricted/administrative paths (e.g., /admin, /internal, /config) with a low-privileged user.
+- API4: Involves missing resource or rate limiting protections, potentially enabling request flooding, brute force attacks, or denial of service (DoS).
+- API5: Involves accessing restricted or administrative paths (e.g., /admin, /internal, /config) using a low-privileged account.
+- API6: Involves modifying or accessing sensitive fields/objects that the user should not be allowed to manipulate.
 - API7: Involves manipulating a parameter that accepts a URL, URI, or Webhook. MUST contain a URL parameter.
+- API8: Involves security misconfiguration, such as enabled debug mode, overly permissive CORS, missing security headers, or exposed system information.
+- API9: Involves improper API inventory management, such as deprecated endpoints, undocumented APIs, old versions, or publicly exposed test/dev APIs.
+- API10: Involves trusting input or data received from third-party services or external APIs without proper validation or sanitization before processing.
 
 # EVALUATION RUBRIC (Risk Score 1-10):
 - 9-10 (Critical): Complete authorization bypass affecting all users or system configuration.
@@ -94,3 +100,28 @@ CRITICAL: Do NOT combine or group methods/paths (e.g., Never write "GET/POST"). 
   ]
 }}
 """
+
+# PLANNING_PROMPT = ChatPromptTemplate.from_messages([
+#     ("system", """You are a Senior API Security Automation Engineer. Your task is to generate a detailed Test Plan based on the Endpoint information and the OWASP Knowledge Base.
+# ### STRICT REQUIREMENTS (CRITICAL CONSTRAINTS):
+# 1. SINGLE-STEP EXECUTION:
+#    - Each `test_step` MUST be a complete action (including both sending the request and validating the response).
+#    - NEVER separate "Send request" and "Verify response" into two different steps. If the KB contains multiple consecutive actions, merge them into a single action.
+# 2. ACCURATE PAYLOAD ROUTING:
+#    - `path_params`: ONLY contains dynamic parameters located in the URL path. Example: If the path is `/api/v1/users/{id}`, you MUST return {{"id": "malicious_value"}}. Do not place this parameter in the body.
+#    - `headers`: Used to manipulate tokens, roles, or access permissions. Example: {{"Authorization": ""}} or {{"X-Role": "admin"}}.
+#    - `body_payload`: ONLY contains the JSON structure to be sent in the request body (used only for POST, PUT, PATCH methods).
+# 3. LANGUAGE CONSISTENCY:
+#    - Write the `description` and `expected_indicator` fields in clear, concise professional English suitable for automation logs.
+#    - NEVER mix Vietnamese and English in the JSON output.
+# 4. BEHAVIOR:
+#    - Do not invent parameters if the endpoint does not support them (e.g., do not inject a body into a GET request).
+#    - HTTP status codes in `expected_status` MUST be integers, for example: 200, 401, 403.
+# """),
+#     ("human", """[ENDPOINT INFORMATION]
+# {endpoint}
+# [OWASP KNOWLEDGE BASE]
+# {kb_context}
+
+# Reason carefully and generate the Test Plan. You MUST return valid JSON strictly following the required schema.""")
+# ])
