@@ -5,15 +5,16 @@ from app.core.enum import THIRD_PARTY_KEYWORDS, SENSITIVE_BODY_FIELDS, SSRF_PARA
 
 class SecurityAnalyzer:
     @staticmethod
+    @staticmethod
     def _extract_body_fields(endpoint) -> set:
         """
         Trích xuất tên field từ requestBody schema.
-        Hỗ trợ cả schema dạng object properties và allOf/anyOf.
+        Hỗ trợ cả OpenAPI 3.0 (request_body) và Swagger 2.0 (parameters).
         """
         fields = set()
-        body = getattr(endpoint, "request_body", None) or {}
-
         schema = {}
+        # 1. Thử lấy theo chuẩn OpenAPI 3.0
+        body = getattr(endpoint, "request_body", None)
         if isinstance(body, dict):
             schema = (
                 body
@@ -22,11 +23,31 @@ class SecurityAnalyzer:
                 .get("schema", {})
             )
 
+        # 2. Thử lấy theo chuẩn Swagger 2.0 (Parser của bạn đang dùng cách này)
+        if not schema:
+            parameters = getattr(endpoint, "parameters", [])
+            for param in parameters:
+                # Kiểm tra location hoặc in là 'body'
+                if getattr(param, "location", "") == "body" or getattr(param, "in", "") == "body":
+                    # Parser có thể lưu model vào param.schema hoặc trực tiếp vào dictionary
+                    if isinstance(param, dict):
+                        schema = param.get("schema", {})
+                    else:
+                        schema = getattr(param, "schema", {})
+                    break
+
+        # 3. Hàm đệ quy trích xuất properties
         def extract_props(s):
             if not isinstance(s, dict):
-                return
+                # Nếu object chưa thành dict, thử gọi vars()
+                if hasattr(s, "__dict__"):
+                    s = vars(s)
+                else:
+                    return
+            
             for field in s.get("properties", {}).keys():
                 fields.add(field.lower())
+                
             # Xử lý allOf / anyOf / oneOf
             for combiner in ["allOf", "anyOf", "oneOf"]:
                 for sub in s.get(combiner, []):
@@ -38,12 +59,11 @@ class SecurityAnalyzer:
     @staticmethod
     def analyze(endpoints) -> List[Dict[str, Any]]:
         findings = []
-
         for ep in endpoints:
             score = 0
             reasons = []
             tags: Dict[str, List[str]] = {}  # tag → list of reasons
-
+            extracted_body_fields = set()
             def add_tag(tag: str, reason: str, points: int):
                 """Helper để thêm tag + reason + điểm cùng lúc."""
                 nonlocal score
@@ -55,7 +75,8 @@ class SecurityAnalyzer:
 
             path_lower = ep.path.lower()
             method = ep.method.upper()
-
+            if method in ["POST", "PUT", "PATCH"]:
+                extracted_body_fields = SecurityAnalyzer._extract_body_fields(ep)
             # ── API1: BOLA ────────────────────────────────────────────
             # Dấu hiệu chính: path param (truy cập resource theo ID)
             path_params = [
@@ -218,8 +239,7 @@ class SecurityAnalyzer:
 
             # Kiểm tra body field chứa URL
             if method in ["POST", "PUT", "PATCH"]:
-                body_fields = SecurityAnalyzer._extract_body_fields(ep)
-                ssrf_body = body_fields & SSRF_PARAM_KEYWORDS
+                ssrf_body = extracted_body_fields & SSRF_PARAM_KEYWORDS
                 if ssrf_body:
                     add_tag(
                         "API7",
@@ -318,7 +338,7 @@ class SecurityAnalyzer:
                         for p in ep.parameters
                     ],
                     "has_request_body": method in ["POST", "PUT", "PATCH"],
-
+                    "body_fields": list(extracted_body_fields),
                     # ── Thông tin phân tích bảo mật ──────────────────
                     "score":    score,
                     "severity": severity,

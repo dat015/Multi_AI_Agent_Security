@@ -24,8 +24,6 @@ class SwaggerExtractor:
         paths = spec.get("paths", {})
         components = spec.get("components", {})
         security_schemes = components.get("securitySchemes", {})
-
-        # Detect global auth
         global_security = spec.get("security", [])
 
         for path, methods in paths.items():
@@ -33,7 +31,7 @@ class SwaggerExtractor:
 
                 parameters = []
 
-                # 🔹 Parameters (path, query)
+                # 🔹 Parameters (path, query, header)
                 for param in details.get("parameters", []):
                     parameters.append(APIParameter(
                         name=param.get("name"),
@@ -42,24 +40,14 @@ class SwaggerExtractor:
                         type=param.get("schema", {}).get("type")
                     ))
 
-                # 🔹 Request Body
-                request_body = details.get("requestBody")
-                if request_body:
-                    parameters.append(APIParameter(
-                        name="body",
-                        location="body",
-                        required=request_body.get("required", False),
-                        type="object"
-                    ))
+                # 🔹 Lấy Request Body
+                # Lấy toàn bộ dict của requestBody thay vì chỉ check True/False
+                raw_request_body = details.get("requestBody")
 
                 # Detect auth
                 requires_auth = False
-
-                # Case 1: endpoint-level security
                 if "security" in details:
                     requires_auth = True
-
-                # Case 2: global security
                 elif global_security:
                     requires_auth = True
 
@@ -68,9 +56,11 @@ class SwaggerExtractor:
                     method=method.upper(),
                     summary=details.get("summary"),
                     parameters=parameters,
-                    requires_auth=requires_auth  
+                    requires_auth=requires_auth,
+                    request_body=raw_request_body,
+                    raw_details=details
                 )
 
                 endpoints.append(endpoint)  
 
-        return ParsedSpec(endpoints=endpoints) 
+        return ParsedSpec(endpoints=endpoints)

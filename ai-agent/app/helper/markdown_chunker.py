@@ -4,10 +4,10 @@ def endpoint_to_markdown(ep: Dict[str, Any]) -> str:
   
     method = ep.get("method", "UNKNOWN").upper()
     path = ep.get("path", "/")
-    summary = ep.get("summary") or "Không có mô tả"
+    summary = ep.get("summary") or "No description available"
     severity = ep.get("severity", "UNKNOWN")
     score = ep.get("score", 0)
-    requires_auth = "Bắt buộc (Có Auth)" if ep.get("requires_auth") else "Không yêu cầu (Public)"
+    requires_auth = "required (with Auth)" if ep.get("requires_auth") else "optional (public)"
 
     # Xây dựng header của Endpoint
     md = f"### [{method}] {path}\n"
@@ -20,7 +20,7 @@ def endpoint_to_markdown(ep: Dict[str, Any]) -> str:
     if params:
         md += "**Parameters & Payload:**\n"
         for p in params:
-            req_status = "Bắt buộc" if p.get("required") else "Tùy chọn"
+            req_status = "required" if p.get("required") else "optional"
             location = p.get("location")
             name = p.get("name")
             p_type = p.get("type", "unknown")
@@ -30,7 +30,14 @@ def endpoint_to_markdown(ep: Dict[str, Any]) -> str:
             else:
                 md += f"  - `{name}` (in {location}): Type `{p_type}` [{req_status}]\n"
         md += "\n"
-
+    has_request_body = ep.get("has_request_body", False)
+    body_fields = ep.get("body_fields", [])
+    if has_request_body:
+        md += "**Payload:**\n"
+        if body_fields:
+            md += f"  - **Fields:** `{', '.join(body_fields)}`\n\n"
+        else:
+            md += "  - Body accepted, no explicit fields (file/raw)\n\n"
     # Xử lý Tags và Lỗi bảo mật
     tags = ep.get("tags", [])
     if tags:
@@ -38,7 +45,7 @@ def endpoint_to_markdown(ep: Dict[str, Any]) -> str:
 
     reasons = ep.get("reasons", [])
     if reasons:
-        md += "**Chi tiết phát hiện rủi ro (Reasons):**\n"
+        md += "**Reasons:**\n"
         for reason in reasons:
             md += f"  - {reason}\n"
 

@@ -15,7 +15,8 @@ class APIEndpoint(BaseModel):
     summary: Optional[str]
     parameters: List[APIParameter]
     requires_auth: bool
-
+    request_body: Optional[dict] = None
+    raw_details: dict
 
 class ParsedSpec(BaseModel):
     endpoints: List[APIEndpoint]

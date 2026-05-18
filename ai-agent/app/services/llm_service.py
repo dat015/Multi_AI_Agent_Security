@@ -4,6 +4,9 @@ from pydantic import BaseModel
 from app.core.config import settings
 import json
 import logging
+from tenacity import retry, wait_exponential, stop_after_attempt, retry_if_exception_type, before_sleep_log
+
+logger = logging.getLogger(__name__)
 
 class LLMService:
     def __init__(self, provider: str = "groq"):
@@ -41,11 +44,22 @@ class LLMService:
                 ("system", system_prompt),
                 ("human", user_prompt)
             ]
-            response = llm_with_json.invoke(messages)
+            max_retries = getattr(settings, "LLM_MAX_RETRIES", 5)
+            @retry(
+                wait=wait_exponential(multiplier=2, min=2, max=16),
+                stop=stop_after_attempt(max_retries),
+                retry=retry_if_exception_type(Exception),
+                before_sleep=before_sleep_log(logger, logging.WARNING),
+                reraise=True,
+            )
+            def _call():
+                return llm_with_json.invoke(messages)
+
+            response = _call()
             return response.content
         except Exception as e:
-            logging.error(f"Lỗi khi gọi LLM (generate_json): {e}")
-            raise e
+            logger.error(f"Lỗi khi gọi LLM (generate_json): {e}")
+            raise
 
     def generate_structured(self, prompt_messages: list, input_variables: dict, pydantic_schema: type[BaseModel], fallback_method="json_mode"): # <-- Chuyển mặc định sang json_mode
         """
@@ -61,9 +75,20 @@ class LLMService:
             )
             
             chain = prompt_template | structured_llm
-            result = chain.invoke(input_variables)
-            
+            max_retries = getattr(settings, "LLM_MAX_RETRIES", 5)
+            @retry(
+                wait=wait_exponential(multiplier=2, min=2, max=16),
+                stop=stop_after_attempt(max_retries),
+                retry=retry_if_exception_type(Exception),
+                before_sleep=before_sleep_log(logger, logging.WARNING),
+                reraise=True,
+            )
+            def _call():
+                return chain.invoke(input_variables)
+
+            result = _call()
+
             return result
         except Exception as e:
-            logging.error(f"Lỗi khi gọi LLM (generate_structured): {e}")
-            raise e
+            logger.error(f"Lỗi khi gọi LLM (generate_structured): {e}")
+            raise
