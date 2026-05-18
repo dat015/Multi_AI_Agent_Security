@@ -7,6 +7,17 @@ venv/
 .venv/
 ENV/
 
+# 1. Bỏ qua thư mục build (chứa các file .dll, binaries của RESTler)
+# Thay đổi đường dẫn này nếu thư mục restler-files của bạn nằm ở vị trí khác
+/ai-agent/restler-files/
+
+# 2. Bỏ qua thư mục chứa kết quả phân tích của RESTler (grammar.json, dict.json...)
+/ai-agent/restler_output/
+/ai-agent/temp_uploads/
+
+# 3. Bỏ qua file đầu vào tạm thời (tránh đẩy Swagger nhạy cảm lên Git)
+/ai-agent/*.json
+
 # 🔹 Python cache
 __pycache__/
 *.pyc

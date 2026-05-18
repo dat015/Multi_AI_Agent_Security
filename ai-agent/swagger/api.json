@@ -1,62 +1,16 @@
 {
   "openapi": "3.0.3",
   "info": {
-    "title": "BookStore API",
-    "description": "API quản lý cửa hàng sách trực tuyến",
-    "version": "1.2.3",
-    "contact": {
-      "name": "Dev Team",
-      "email": "dev@bookstore.local"
-    }
+    "title": "E-Wallet Vulnerable API",
+    "description": "API hệ thống ví điện tử chứa đầy đủ OWASP Top 10 và Dependency Chain",
+    "version": "2.0.0"
   },
   "servers": [
     {
-      "url": "https://api.bookstore.local/v1",
-      "description": "Production"
-    },
-    {
-      "url": "https://dev.bookstore.local/v2",
-      "description": "Development"
+      "url": "https://api.ewallet.local"
     }
   ],
   "components": {
-    "schemas": {
-      "User": {
-        "type": "object",
-        "properties": {
-          "id": { "type": "integer" },
-          "username": { "type": "string" },
-          "email": { "type": "string" },
-          "password": { "type": "string" },
-          "role": {
-            "type": "string",
-            "enum": ["user", "admin", "superadmin"]
-          },
-          "isAdmin": { "type": "boolean" }
-        }
-      },
-      "Book": {
-        "type": "object",
-        "properties": {
-          "id": { "type": "integer" },
-          "title": { "type": "string" },
-          "author": { "type": "string" },
-          "price": { "type": "number" },
-          "stock": { "type": "integer" },
-          "secretNote": { "type": "string" }
-        }
-      },
-      "Order": {
-        "type": "object",
-        "properties": {
-          "id": { "type": "integer" },
-          "userId": { "type": "integer" },
-          "bookId": { "type": "integer" },
-          "quantity": { "type": "integer" },
-          "totalPrice": { "type": "number" }
-        }
-      }
-    },
     "securitySchemes": {
       "BearerAuth": {
         "type": "http",
@@ -65,30 +19,16 @@
       }
     }
   },
+  "security": [
+    {
+      "BearerAuth": []
+    }
+  ],
   "paths": {
-    "/health": {
-      "get": {
-        "summary": "Health check",
-        "responses": {
-          "200": { "description": "OK" }
-        }
-      }
-    },
-    "/books": {
-      "get": {
-        "summary": "Lấy danh sách sách",
-        "parameters": [
-          { "name": "page", "in": "query", "schema": { "type": "integer", "default": 1 } },
-          { "name": "limit", "in": "query", "schema": { "type": "integer", "default": 20 } }
-        ],
-        "responses": {
-          "200": { "description": "Success" }
-        }
-      }
-    },
-    "/auth/login": {
+    "/users": {
       "post": {
-        "summary": "Đăng nhập",
+        "summary": "Tạo tài khoản người dùng",
+        "security": [],
         "requestBody": {
           "required": true,
           "content": {
@@ -96,7 +36,52 @@
               "schema": {
                 "type": "object",
                 "properties": {
-                  "email": { "type": "string" },
+                  "username": { "type": "string" },
+                  "password": { "type": "string" },
+                  "role": { "type": "string", "description": "Dấu hiệu API3 (Mass Assignment)" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "userId": { "type": "string" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "summary": "Lấy danh sách toàn bộ người dùng",
+        "description": "Dấu hiệu API4 (Resource Consumption - thiếu pagination), API5 (BFLA)",
+        "responses": {
+          "200": {
+            "description": "Danh sách người dùng"
+          }
+        }
+      }
+    },
+    "/auth/login": {
+      "post": {
+        "summary": "Đăng nhập",
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "username": { "type": "string" },
                   "password": { "type": "string" }
                 }
               }
@@ -105,7 +90,7 @@
         },
         "responses": {
           "200": {
-            "description": "Login successful",
+            "description": "Thành công",
             "content": {
               "application/json": {
                 "schema": {
@@ -120,87 +105,203 @@
         }
       }
     },
-    "/users": {
-      "get": {
-        "summary": "Lấy danh sách người dùng",
-        "responses": {
-          "200": { "description": "List users" }
-        }
-      }
-    },
-    "/users/{id}": {
-      "get": {
-        "summary": "Lấy thông tin người dùng",
+    "/users/{userId}": {
+      "put": {
+        "summary": "Cập nhật profile",
         "parameters": [
           {
-            "name": "id",
+            "name": "userId",
             "in": "path",
             "required": true,
-            "schema": { "type": "integer" }
+            "schema": { "type": "string" }
           }
         ],
-        "responses": {
-          "200": { "description": "User info" }
-        }
-      }
-    },
-    "/users/register": {
-      "post": {
-        "summary": "Đăng ký tài khoản",
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
-              "schema": { "$ref": "#/components/schemas/User" }
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "email": { "type": "string" },
+                  "balance": { "type": "number", "description": "Dấu hiệu API3 (Mass Assignment - tự update số dư)" }
+                }
+              }
             }
           }
         },
         "responses": {
-          "201": { "description": "Created" }
+          "200": { "description": "Updated" }
         }
       }
     },
-    "/profile": {
-      "get": {
-        "summary": "Lấy thông tin profile",
+    "/wallets": {
+      "post": {
+        "summary": "Mở ví mới cho User",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "userId": { "type": "string", "description": "Lấy từ POST /users" },
+                  "currency": { "type": "string" }
+                },
+                "required": ["userId"]
+              }
+            }
+          }
+        },
         "responses": {
-          "200": { "description": "Profile" }
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "walletId": { "type": "string" }
+                  }
+                }
+              }
+            }
+          }
         }
       }
     },
-    "/books/admin": {
+    "/wallets/{walletId}": {
       "get": {
-        "summary": "Quản lý sách (admin)",
+        "summary": "Xem thông tin ví",
+        "parameters": [
+          {
+            "name": "walletId",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
         "responses": {
           "200": { "description": "Success" }
         }
       }
     },
-    "/orders": {
+    "/wallets/{walletId}/cards": {
       "post": {
-        "summary": "Tạo đơn hàng mới",
+        "summary": "Liên kết thẻ ngân hàng vào ví",
+        "parameters": [
+          {
+            "name": "walletId",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
-              "schema": { "$ref": "#/components/schemas/Order" }
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "cardNumber": { "type": "string" }
+                }
+              }
             }
           }
         },
         "responses": {
-          "201": { "description": "Order created" }
+          "201": {
+            "description": "Card added",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "cardId": { "type": "string" }
+                  }
+                }
+              }
+            }
+          }
         }
       }
     },
-    "/orders/{orderId}": {
-      "delete": {
-        "summary": "Hủy đơn hàng",
+    "/cards/{cardId}": {
+      "get": {
+        "summary": "Xem chi tiết thẻ",
         "parameters": [
           {
-            "name": "orderId",
+            "name": "cardId",
             "in": "path",
             "required": true,
-            "schema": { "type": "integer" }
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": { "description": "Success" }
+        }
+      }
+    },
+    "/transactions": {
+      "post": {
+        "summary": "Chuyển tiền (Business Flow)",
+        "description": "Dấu hiệu API6 (Thiếu rate limit trên luồng nhạy cảm)",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "walletId": { "type": "string", "description": "Ví gửi" },
+                  "receiverId": { "type": "string", "description": "Ví nhận" },
+                  "amount": { "type": "number" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Transfer successful",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "transactionId": { "type": "string" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/transactions/{transactionId}": {
+      "get": {
+        "summary": "Xem chi tiết giao dịch",
+        "parameters": [
+          {
+            "name": "transactionId",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": { "description": "Success" }
+        }
+      },
+      "delete": {
+        "summary": "Hủy giao dịch (nếu chưa xử lý)",
+        "parameters": [
+          {
+            "name": "transactionId",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
           }
         ],
         "responses": {
@@ -208,75 +309,37 @@
         }
       }
     },
-    "/search": {
-      "get": {
-        "summary": "Tìm kiếm sách",
-        "parameters": [
-          {
-            "name": "q",
-            "in": "query",
-            "schema": { "type": "string" },
-            "description": "Từ khóa tìm kiếm"
-          },
-          {
-            "name": "page",
-            "in": "query",
-            "schema": { "type": "integer", "default": 1 }
-          }
-        ],
-        "responses": {
-          "200": { "description": "Results" }
-        }
-      }
-    },
-    "/proxy/image": {
-      "get": {
-        "summary": "Lấy hình ảnh từ URL",
-        "parameters": [
-          {
-            "name": "url",
-            "in": "query",
-            "required": true,
-            "schema": { "type": "string" }
-          }
-        ],
-        "responses": {
-          "200": { "description": "Image" }
-        }
-      }
-    },
-    "/admin/debug": {
-      "get": {
-        "summary": "Debug information",
-        "responses": {
-          "200": { "description": "Debug info" }
-        }
-      }
-    },
-    "/api/v1/old/books": {
-      "get": {
-        "summary": "Lấy danh sách sách (phiên bản cũ)",
-        "responses": {
-          "200": { "description": "Success" }
-        }
-      }
-    },
-    "/webhook/external": {
+    "/webhooks/bank": {
       "post": {
-        "summary": "Nhận webhook từ bên thứ ba",
+        "summary": "Nhận callback từ ngân hàng (Third-party)",
+        "security": [],
+        "description": "Dấu hiệu API10 (Unsafe Consumption) và API7 (SSRF qua providerUrl)",
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
               "schema": {
                 "type": "object",
-                "additionalProperties": true
+                "properties": {
+                  "providerUrl": { "type": "string", "format": "url" },
+                  "payload": { "type": "string" }
+                }
               }
             }
           }
         },
         "responses": {
-          "200": { "description": "Received" }
+          "200": { "description": "Webhook received" }
+        }
+      }
+    },
+    "/api/v1/debug/env": {
+      "get": {
+        "summary": "Xem biến môi trường server",
+        "security": [],
+        "description": "Dấu hiệu API8 (Misconfiguration - Lộ config), API9 (Inventory - endpoint v1 cũ)",
+        "responses": {
+          "200": { "description": "Server info exposed" }
         }
       }
     }
