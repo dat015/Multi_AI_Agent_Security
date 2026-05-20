@@ -18,14 +18,17 @@ Hướng phát triển (không implement):
 """
 
 from __future__ import annotations
+import heapq
 import re
 import json
 from dataclasses import dataclass, field
 from typing import Optional
+from fastapi import logger
 from langchain_openai import ChatOpenAI
 
 from app.schemas.api_schema import APIEndpoint
-
+from collections import defaultdict
+from app.helper.make_graph_image import visualize_dependency_graph
 llm = ChatOpenAI(model="gpt-4o", temperature=0)
 
 
@@ -490,46 +493,144 @@ def llm_resolve_dependencies(
 
 def topological_sort(graph: DependencyGraph) -> list[str]:
     """
-    Kahn's algorithm — sắp xếp endpoint theo thứ tự:
+    Priority-aware Kahn Topological Sort
+
+    Improvements:
+    - deterministic ordering
+    - auth-first
+    - producer-first
+    - benign-before-attack
+    - cycle warning
+
     producer luôn chạy trước consumer.
-    
-    Ví dụ kết quả:
-      [POST /users, POST /orders, POST /payments, GET /orders/refund]
-    
-    Tại sao cần bước này?
-    → Execution Agent không cần "suy nghĩ" về thứ tự nữa.
-    → Cứ chạy theo list từ trên xuống là đúng.
-    
-    Xử lý cycle: node trong cycle được thêm vào cuối
-    (tránh infinite loop khi topo sort gặp cycle).
     """
-    from collections import deque, defaultdict
 
     in_degree: dict[str, int] = defaultdict(int)
     adjacency: dict[str, list[str]] = defaultdict(list)
 
+    # --------------------------
+    # Helper: node priority
+    # --------------------------
+    def node_priority(node) -> tuple:
+        """
+        Lower tuple = higher priority
+        """
+
+        return (
+            # 1. auth/login endpoint trước
+            0 if getattr(node, "is_auth_endpoint", False) else 1,
+
+            # 2. producer endpoint trước
+            -len(
+                getattr(
+                    node,
+                    "produces_variables",
+                    []
+                )
+            ),
+
+            # 3. benign trước attack
+            0 if not getattr(
+                node,
+                "is_attack",
+                False
+            ) else 1,
+
+            # 4. deterministic ordering
+            node.node_id
+        )
+
+    # --------------------------
+    # Init indegree
+    # --------------------------
     for node_id in graph.nodes:
-        in_degree[node_id] = in_degree.get(node_id, 0)
+        in_degree[node_id] = 0
 
+    # --------------------------
+    # Build adjacency + indegree
+    # --------------------------
     for edge in graph.edges:
-        adjacency[edge.producer_id].append(edge.consumer_id)
-        in_degree[edge.consumer_id] = in_degree.get(edge.consumer_id, 0) + 1
 
-    # Bắt đầu từ node không có dependency (in_degree = 0)
-    queue = deque([n for n in graph.nodes if in_degree[n] == 0])
+        adjacency[
+            edge.producer_id
+        ].append(
+            edge.consumer_id
+        )
+
+        in_degree[
+            edge.consumer_id
+        ] += 1
+
+    # --------------------------
+    # Deterministic ordering
+    # --------------------------
+    for node_id in adjacency:
+        adjacency[node_id].sort()
+
+    # --------------------------
+    # Priority queue
+    # --------------------------
+    heap = []
+
+    for node_id in sorted(graph.nodes):
+
+        if in_degree[node_id] == 0:
+
+            heapq.heappush(
+                heap,
+                (
+                    node_priority(
+                        graph.nodes[node_id]
+                    ),
+                    node_id
+                )
+            )
+
     sorted_nodes = []
 
-    while queue:
-        node_id = queue.popleft()
-        sorted_nodes.append(node_id)
-        for neighbor in adjacency[node_id]:
-            in_degree[neighbor] -= 1
-            if in_degree[neighbor] == 0:
-                queue.append(neighbor)
+    # --------------------------
+    # Kahn Topological Sort
+    # --------------------------
+    while heap:
 
-    # Nodes còn lại (trong cycle) → thêm vào cuối
-    remaining = [n for n in graph.nodes if n not in sorted_nodes]
-    return sorted_nodes + remaining
+        _, node_id = heapq.heappop(heap)
+
+        sorted_nodes.append(node_id)
+
+        for neighbor in adjacency[node_id]:
+
+            in_degree[neighbor] -= 1
+
+            if in_degree[neighbor] == 0:
+
+                heapq.heappush(
+                    heap,
+                    (
+                        node_priority(
+                            graph.nodes[neighbor]
+                        ),
+                        neighbor
+                    )
+                )
+
+    # --------------------------
+    # Cycle detection
+    # --------------------------
+    remaining = [
+        n
+        for n in graph.nodes
+        if n not in sorted_nodes
+    ]
+
+    if remaining:
+        logger.warning(
+            "Cycle detected: %s",
+            remaining
+        )
+
+    # Best-effort mode:
+    # append cyclic nodes cuối
+    return sorted_nodes + sorted(remaining)
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -558,18 +659,12 @@ class DependencyResolver:
         # 2. Xây dựng EndpointNode từ parsed_endpoints
         for ep in parsed_endpoints:
             node_id = f"{ep.method}:{ep.path}"
-            
-            # Chỉ test những endpoint mà LLM Recon đã chọn (có trong audits)
-            # Nếu bạn muốn dựng graph cho TẤT CẢ endpoint thì bỏ dòng if này
-            # if node_id not in audit_map:
-            #     continue
 
             # A. Tìm Consumes (những tham số cần truyền)
             consumes = [
                 p.name for p in ep.parameters 
                 if p.location in ["path", "query"] or (p.location == "body" and p.required)
             ]
-
             # B. Tìm Produces (những trường API này trả về)
             # Tái sử dụng hàm extract_response_fields gốc của bạn truyền vào raw_details
             produces = extract_response_fields({"responses": ep.raw_details.get("responses", {})})
@@ -610,7 +705,10 @@ class DependencyResolver:
 
         # 4. Sắp xếp thứ tự chạy
         execution_order = topological_sort(graph)
-
+        visualize_dependency_graph(
+            graph,
+            save_path="output/dependency_graph.png"
+        )
         return {
             "graph": graph.to_dict(),
             "execution_order": execution_order,

@@ -38,7 +38,10 @@
                 "properties": {
                   "username": { "type": "string" },
                   "password": { "type": "string" },
-                  "role": { "type": "string", "description": "Dấu hiệu API3 (Mass Assignment)" }
+                  "role": {
+                    "type": "string",
+                    "description": "Quyền của người dùng"
+                  }
                 }
               }
             }
@@ -62,7 +65,7 @@
       },
       "get": {
         "summary": "Lấy danh sách toàn bộ người dùng",
-        "description": "Dấu hiệu API4 (Resource Consumption - thiếu pagination), API5 (BFLA)",
+        "description": "Lấy toàn bộ danh sách người dùng",
         "responses": {
           "200": {
             "description": "Danh sách người dùng"
@@ -124,7 +127,7 @@
                 "type": "object",
                 "properties": {
                   "email": { "type": "string" },
-                  "balance": { "type": "number", "description": "Dấu hiệu API3 (Mass Assignment - tự update số dư)" }
+                  "balance": { "type": "number", "description": "" }
                 }
               }
             }
@@ -145,7 +148,10 @@
               "schema": {
                 "type": "object",
                 "properties": {
-                  "userId": { "type": "string", "description": "Lấy từ POST /users" },
+                  "userId": {
+                    "type": "string",
+                    "description": "Lấy từ POST /users"
+                  },
                   "currency": { "type": "string" }
                 },
                 "required": ["userId"]
@@ -245,8 +251,8 @@
     },
     "/transactions": {
       "post": {
-        "summary": "Chuyển tiền (Business Flow)",
-        "description": "Dấu hiệu API6 (Thiếu rate limit trên luồng nhạy cảm)",
+        "summary": "Chuyển tiền",
+        "description": "Chuyển tiền",
         "requestBody": {
           "required": true,
           "content": {
@@ -311,9 +317,9 @@
     },
     "/webhooks/bank": {
       "post": {
-        "summary": "Nhận callback từ ngân hàng (Third-party)",
+        "summary": "Nhận callback từ ngân hàng",
         "security": [],
-        "description": "Dấu hiệu API10 (Unsafe Consumption) và API7 (SSRF qua providerUrl)",
+        "description": "Nhận callback từ ngân hàng",
         "requestBody": {
           "required": true,
           "content": {
@@ -337,7 +343,7 @@
       "get": {
         "summary": "Xem biến môi trường server",
         "security": [],
-        "description": "Dấu hiệu API8 (Misconfiguration - Lộ config), API9 (Inventory - endpoint v1 cũ)",
+        "description": "Xem biến môi trường server",
         "responses": {
           "200": { "description": "Server info exposed" }
         }

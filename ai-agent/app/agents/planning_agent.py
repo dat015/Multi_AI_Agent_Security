@@ -160,7 +160,7 @@ def planning_node(state: dict) -> dict:
 
     full_test_plan = []
     
-    # 💥 DUYỆT THEO ĐÚNG THỨ TỰ DEPENDENCY GRAPH 
+
     for node_id in execution_order:
         node_info = graph_nodes.get(node_id, {})
         

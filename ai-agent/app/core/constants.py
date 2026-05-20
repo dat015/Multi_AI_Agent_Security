@@ -5,121 +5,100 @@ CHUNK_SIZE = 10
 
 SWAGGER_DEFAULT_PATH = "swagger/api.json"
 KNOWLEDGE_DEFAULT_PATH = "knowledge/owasp_kb.json"
-NORMALIZER_PROMPT = """
-# ROLE:
-You are a Contextual Data Architect specializing in API Security Metadata. Your task is to deconstruct raw API specifications into a "Security Context Object."
-
-# OBJECTIVE:
-Extract functional identities, ownership patterns, and structural complexity. Do NOT identify vulnerabilities; focus on factual data mapping.
-
-# EXTRACTION RULES:
-1.  **Identity Mapping**: Identify all resource identifiers (IDs) and categorize them (e.g., Resource_ID, Parent_ID, Owner_ID).
-2.  **Structural Complexity**: Count the number of fields in the request body and detect nested objects (Crucial for BOPLA analysis).
-3.  **Communication Patterns**: Identify if the endpoint involves external URLs, third-party integrations, or sensitive business triggers (payment, reset, etc.).
-
-# INPUT:
-Method: {method} | Path: {path} | Schema: {schema}
-
-# OUTPUT JSON FORMAT:
-{{
-  "identity_vectors": [
-    {{ "param": "name", "role": "Resource/Owner/Parent", "type": "UUID/Integer/String" }}
-  ],
-  "structural_metadata": {{
-    "body_field_count": 0,
-    "has_nested_objects": true/false,
-    "interaction_type": "Internal/External_Integration/Sensitive_Business"
-  }},
-  "action_intent": "READ/CREATE/UPDATE/DELETE/EXECUTE",
-  "data_scope": "Individual/Collection/System_Wide",
-  "raw_logic_summary": "Short technical description of what this endpoint does functionally."
-}}
-"""
 
 AGENT_SYSTEM_PROMPT = """
 ROLE:
 You are a Senior API Security Auditor specialized in OWASP API Security Top 10 (2023).
 
-Goal:
-Analyze endpoints deterministically and return HIGH-CONFIDENCE security hypotheses for manual testing.
-Focus ONLY on logical/API risks (no SQLi/XSS).
+GOAL:
+You MUST NOT discover vulnerabilities from scratch.
 
-TAG DICTIONARY (STRICT):
-Only use these mappings:
+A static analyzer has already scanned the API and assigned candidate security risks.
 
-API1 = BOLA / IDOR
-- Resource ID manipulation (`{id}`, `userId`, `orderId`)
-- Access/modification of foreign resources
+Your task is to VERIFY whether these risks are actually valid (TRUE_POSITIVE) or merely false alarms (FALSE_POSITIVE).
 
-API2 = Broken Authentication
-- Weak/broken authentication mechanisms
-- Sensitive endpoint accessible without login
+You MUST evaluate correctness based on:
 
-API3 = Mass Assignment / BOPLA
-- Sensitive fields in body (`role`, `isAdmin`, `permissions`)
+- Endpoint path and HTTP method
+- Authentication requirements
+- Parameters (Path, Query) and request body fields
+- Endpoint summary and business context
 
-API4 = Resource Consumption
-- Missing pagination / rate limiting on collection-heavy APIs
+IMPORTANT RULES:
 
-API5 = BFLA
-- Admin/restricted functions accessible by low privilege users
+1.
+An endpoint MAY contain MULTIPLE OWASP indicators at the same time.
 
-API6 = Business Flow Abuse
-- Sensitive flows without restriction
-- Orders, payments, transfers, checkout, booking
+You MUST evaluate EACH candidate tag independently.
 
-API7 = SSRF
-- URL/URI/Webhook input can trigger server-side requests
+ONE verified vulnerability MUST produce EXACTLY ONE audit object.
 
-API8 = Security Misconfiguration
-- Debug mode, system info leakage, permissive CORS
+If an endpoint contains MULTIPLE verified vulnerabilities, you MUST return MULTIPLE audit objects for the SAME endpoint.
 
-API9 = Inventory Exposure
-- Deprecated/test/old APIs (`v1`, `old`, `beta`, `test`)
+DO NOT merge multiple OWASP risks into a single audit object.
 
-API10 = Unsafe Consumption
-- Blind trust of upstream/third-party input
-- Unsigned webhooks, missing signature validation
+2.
+DO NOT blindly trust pre-assigned tags.
 
-VALIDATION RULES:
-Candidate Tags are ONLY hypotheses. Re-check independently.
+Aggressively reject weak or speculative matches.
 
-For EACH endpoint:
-- Verify path, method, auth, params, body, business context
-- Reject weak matches aggressively
-- Prefer precision over guessing
+3.
+Missing authentication ALONE does NOT automatically indicate API2 (Broken Authentication).
 
-NORMAL CASES (NOT vulnerabilities):
-- Public endpoints:
-  `/books`, `/search`, `/login`, `/register`, `/public/*`
-- Health endpoints:
-  `/health`, `/ping`, `/status`
-- Public catalog by ID:
-  `/products/{id}` is NOT automatically API1
+Example:
 
-PRIORITY RULES:
-- Resource ID + private object → prefer API1
-- Admin/restricted endpoint → prefer API5
-- Business-critical flow → prefer API6
-- Missing auth ALONE ≠ automatic API2
-- Public endpoint without auth is normal
+`GET /products/{id}`
 
-SCORING:
-9–10 = Critical authz bypass/system exposure
-7–8 = Private data or admin abuse
-4–6 = Medium exposure/resource abuse
-1–3 = Minor or speculative issue
+If it is a public catalog endpoint, it is NOT automatically API1 (BOLA).
 
-OUTPUT:
-Return EXACTLY this JSON format:
+4.
+Clearly distinguish between:
 
+- Path parameter manipulation → typically API1 (BOLA / IDOR)
+
+- Sensitive field modification in request body → typically API3 (BOPLA / Mass Assignment)
+5.
+DO NOT claim a vulnerability is fully confirmed unless exploit evidence exists.
+
+For static evidence, prefer wording such as:
+
+- may be vulnerable
+- potentially vulnerable
+- likely vulnerable
+
+instead of:
+
+- is vulnerable
+
+SCORING RULES:
+
+9–10: Critical vulnerability with high confidence (e.g., authorization bypass or severe system exposure).
+
+7–8: Clear logical abuse or unauthorized data access (IDOR / BOLA).
+
+4–6: Medium-risk issue (e.g., missing rate limiting or requires additional verification).
+
+1–3: Weak signal or minor information disclosure.
+
+OUTPUT RULES (STRICTLY ENFORCED):
+
+- Return ONLY valid JSON.
+- DO NOT return markdown (no ```json code blocks).
+- DO NOT include explanations before or after the JSON.
+
+- If ALL candidates are FALSE_POSITIVE, return EXACTLY this empty state:
+{
+  "audits": []
+}
+
+- For verified TRUE_POSITIVE candidates, return EXACTLY this JSON schema:
 {
   "audits": [
     {
       "reasoning": {
-        "h": "Hypothesis",
-        "v": "Verification",
-        "c": "Conclusion"
+        "h": "Hypothesis (What is the theoretical risk?)",
+        "v": "Verification (How does the endpoint data confirm this risk?)",
+        "c": "Conclusion (Why is this a True Positive?)"
       },
       "summary": {
         "method": "GET",
@@ -129,7 +108,7 @@ Return EXACTLY this JSON format:
       },
       "evidence": {
         "auth_required": true,
-        "path_params": [],
+        "path_params": ["id"],
         "body_fields": [],
         "attack_pattern": "ID Manipulation"
       },
@@ -141,35 +120,109 @@ Return EXACTLY this JSON format:
     }
   ]
 }
-
-Rules:
-- One valid vulnerability = one audit object.
-- Multiple vulns on one endpoint = multiple objects.
-- CRITICAL: If a candidate tag is a False Positive, set "vuln": "None", "score": 0. If "None", you MUST use "N/A" or empty arrays `[]` for all fields inside "evidence" and "verification" to prevent hallucination.
-- Never invent OWASP tags.
 """
 
-# PLANNING_PROMPT = ChatPromptTemplate.from_messages([
-#     ("system", """You are a Senior API Security Automation Engineer. Your task is to generate a detailed Test Plan based on the Endpoint information and the OWASP Knowledge Base.
-# ### STRICT REQUIREMENTS (CRITICAL CONSTRAINTS):
-# 1. SINGLE-STEP EXECUTION:
-#    - Each `test_step` MUST be a complete action (including both sending the request and validating the response).
-#    - NEVER separate "Send request" and "Verify response" into two different steps. If the KB contains multiple consecutive actions, merge them into a single action.
-# 2. ACCURATE PAYLOAD ROUTING:
-#    - `path_params`: ONLY contains dynamic parameters located in the URL path. Example: If the path is `/api/v1/users/{id}`, you MUST return {{"id": "malicious_value"}}. Do not place this parameter in the body.
-#    - `headers`: Used to manipulate tokens, roles, or access permissions. Example: {{"Authorization": ""}} or {{"X-Role": "admin"}}.
-#    - `body_payload`: ONLY contains the JSON structure to be sent in the request body (used only for POST, PUT, PATCH methods).
-# 3. LANGUAGE CONSISTENCY:
-#    - Write the `description` and `expected_indicator` fields in clear, concise professional English suitable for automation logs.
-#    - NEVER mix Vietnamese and English in the JSON output.
-# 4. BEHAVIOR:
-#    - Do not invent parameters if the endpoint does not support them (e.g., do not inject a body into a GET request).
-#    - HTTP status codes in `expected_status` MUST be integers, for example: 200, 401, 403.
-# """),
-#     ("human", """[ENDPOINT INFORMATION]
-# {endpoint}
-# [OWASP KNOWLEDGE BASE]
-# {kb_context}
+CONFIG_TEMPLATE = {
+    "target": {
+        "base_url":         "http://localhost:8888",
+        "login_endpoint":   "/identity/api/auth/login",
+        "refresh_endpoint": "/identity/api/auth/refresh"
+    },
+    "users": [
+        {
+            "role":     "admin",
+            "email":    "admin@yourapp.com",
+            "password": "YourPassword123"
+        },
+        {
+            "role":     "attacker",
+            "email":    "attacker@yourapp.com",
+            "password": "YourPassword123",
+            "token":    "(optional) paste token nếu có sẵn"
+        },
+        {
+            "role":     "victim",
+            "email":    "victim@yourapp.com",
+            "password": "YourPassword123"
+        }
+    ]
+}
+AUTH_CONFIG_SCHEMA = {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title":   "API Security Tester — Auth Config",
+    "type":    "object",
+    "required": ["target", "users"],
+    "additionalProperties": False,
 
-# Reason carefully and generate the Test Plan. You MUST return valid JSON strictly following the required schema.""")
-# ])
+    "properties": {
+
+        "target": {
+            "type": "object",
+            "required": ["base_url"],
+            "additionalProperties": False,
+            "properties": {
+                "base_url": {
+                    "type":    "string",
+                    "pattern": "^https?://.+",
+                    "description": "Base URL của API server, VD: http://localhost:8888"
+                },
+                "login_endpoint": {
+                    "type":    "string",
+                    "pattern": "^/",
+                    "default": "/identity/api/auth/login",
+                    "description": "Endpoint login, bắt đầu bằng /"
+                },
+                "refresh_endpoint": {
+                    "type":    "string",
+                    "pattern": "^/",
+                    "default": "/identity/api/auth/refresh",
+                    "description": "Endpoint refresh token, bắt đầu bằng /"
+                }
+            }
+        },
+
+        "users": {
+            "type":     "array",
+            "minItems": 1,
+            "items": {
+                "type":     "object",
+                "required": ["role", "email", "password"],
+                "additionalProperties": False,
+                "properties": {
+                    "role": {
+                        "type":      "string",
+                        "minLength": 1,
+                        "pattern":   "^[a-zA-Z0-9_-]+$",
+                        "description": "Tên role tự đặt: admin, attacker, victim, moderator..."
+                    },
+                    "email": {
+                        "type":   "string",
+                        "format": "email",
+                        "description": "Email đăng nhập"
+                    },
+                    "password": {
+                        "type":      "string",
+                        "minLength": 6,
+                        "description": "Mật khẩu (tối thiểu 6 ký tự)"
+                    },
+                    "token": {
+                        "type":        "string",
+                        "description": "JWT token (optional — nếu có thì dùng ngay)"
+                    },
+                    "refresh_token": {
+                        "type":        "string",
+                        "description": "Refresh token (optional)"
+                    },
+                    "token_expires_at": {
+                        "type":        "string",
+                        "description": "ISO 8601 timestamp hết hạn token, VD: 2025-12-31T23:59:59"
+                    },
+                    "user_id": {
+                        "type":        "string",
+                        "description": "User ID (optional — hệ thống tự lấy sau login nếu không có)"
+                    }
+                }
+            }
+        }
+    }
+}

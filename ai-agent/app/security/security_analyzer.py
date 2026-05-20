@@ -305,14 +305,7 @@ class SecurityAnalyzer:
                         f"Param '{param.name}' → có thể tiêu thụ data từ API ngoài",
                         2,
                     )
-
-            # ── Kết luận: giữ endpoint nếu có ít nhất 1 tag ─────────
-            # Tại sao không dùng score threshold?
-            # → Một endpoint có API7_SSRF (score 5) quan trọng hơn
-            #   3 endpoint mỗi cái score 2. Tag-based đảm bảo
-            #   không bỏ sót lỗ hổng nghiêm trọng dù score thấp.
             if tags:
-                # Tính severity tổng thể
                 if score >= 10:
                     severity = "CRITICAL"
                 elif score >= 7:
@@ -323,15 +316,14 @@ class SecurityAnalyzer:
                     severity = "LOW"
 
                 findings.append({
-                    # ── Thông tin đầy đủ để Planning Agent dùng ──────
-                    "path":         ep.path,          # path riêng lẻ
-                    "method":       method,            # method riêng lẻ
+                    "path":         ep.path,        
+                    "method":       method,      
                     "summary":      ep.summary,
                     "requires_auth": ep.requires_auth,
                     "parameters": [
                         {
                             "name":     p.name,
-                            "location": p.location,   # path/query/header/cookie
+                            "location": p.location, 
                             "type":     getattr(p, "type", "string"),
                             "required": getattr(p, "required", False),
                         }
@@ -339,7 +331,6 @@ class SecurityAnalyzer:
                     ],
                     "has_request_body": method in ["POST", "PUT", "PATCH"],
                     "body_fields": list(extracted_body_fields),
-                    # ── Thông tin phân tích bảo mật ──────────────────
                     "score":    score,
                     "severity": severity,
                     "tags":     list(tags.keys()),

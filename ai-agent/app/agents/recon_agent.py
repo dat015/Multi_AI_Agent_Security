@@ -9,6 +9,7 @@ from app.security.security_analyzer import SecurityAnalyzer
 from app.core.constants import SWAGGER_DEFAULT_PATH
 from app.modules.parser.swagger_extractor import SwaggerExtractor
 from app.helper.markdown_chunker import chunk_endpoints_to_markdown
+from app.helper.file_saved import save_json_file, save_markdown_file
 class ReconAgent:
     def __init__(self):
         self.client = OpenAI(
@@ -113,7 +114,28 @@ def recon_node(state):
         audits=aggregated_scenarios, 
         parsed_endpoints=parsed_data.endpoints
     )
-    print('dependency dataa', dependency_data)
+    save_json_file(
+        data={
+            "summary": {
+                "attack_scenarios":
+                    len(
+                        aggregated_scenarios
+                    )
+            },
+            "audits":
+                aggregated_scenarios
+        },
+        file_name="recon_result"
+    )
+
+    save_json_file(
+        data=dependency_data,
+        file_name="dependency_graph"
+    )
+    save_markdown_file(
+        markdown_chunks,
+        f"recon_chunk_{i+1}"
+    )
     return {
         **state,
         "filtered_endpoints": aggregated_scenarios, 
