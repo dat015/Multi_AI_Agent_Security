@@ -16,7 +16,7 @@ class ReconAgent:
             base_url=settings.URL_LLM,
             api_key=settings.GROQ_API_KEY 
         )
-        self.expert_model = settings.LARGE_MODEL_NAME
+        self.expert_model = settings.LLAMA_3_3_70B
 
     def load_kb(self):
         kb_path = Path(__file__).resolve().parent.parent.parent / "knowledge" / "owasp_kb.json"

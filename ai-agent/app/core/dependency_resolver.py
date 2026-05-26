@@ -23,14 +23,14 @@ import re
 import json
 from dataclasses import dataclass, field
 from typing import Optional
-from fastapi import logger
+import logging
 from langchain_openai import ChatOpenAI
 
 from app.schemas.api_schema import APIEndpoint
 from collections import defaultdict
 from app.helper.make_graph_image import visualize_dependency_graph
 llm = ChatOpenAI(model="gpt-4o", temperature=0)
-
+logger = logging.getLogger(__name__)
 
 # ══════════════════════════════════════════════════════════════════════
 # DATA STRUCTURES
@@ -101,6 +101,7 @@ class DependencyGraph:
                     "tags":          n.tags,
                     "produces":      n.produces,
                     "consumes":      n.consumes,
+                    "request_body":  n.request_body,
                 }
                 for nid, n in self.nodes.items()
             },
@@ -120,9 +121,6 @@ class DependencyGraph:
 # ══════════════════════════════════════════════════════════════════════
 # EDGE CASE 1: SYNONYM DICTIONARY
 # ══════════════════════════════════════════════════════════════════════
-
-# Mapping: canonical name → list of known aliases
-# Khi normalize, tất cả alias đều được đưa về canonical name
 SYNONYM_MAP: dict[str, list[str]] = {
     "user_id": [
         "userid", "user_id", "uid", "account_id", "accountid",
@@ -264,36 +262,80 @@ def extract_response_fields(endpoint_data: dict) -> list[str]:
     return list(set(fields))
 
 
-def _collect_fields(schema: dict, result: list, depth: int = 0):
-    """Đệ quy trích xuất field names từ JSON Schema."""
-    if depth > 4 or not isinstance(schema, dict):
+def _collect_fields(
+    schema: dict,
+    result: list,
+    depth: int = 0,
+    parent: str = "",
+):
+    if depth > 6 or not isinstance(schema, dict):
         return
 
-    # Object với properties
-    for fname in schema.get("properties", {}).keys():
-        # 1. Lưu tên gốc (VD: transactionId)
+    properties = schema.get("properties", {})
+
+    for fname, details in properties.items():
+
+        full_name = (
+            f"{parent}.{fname}"
+            if parent
+            else fname
+        )
+
+        # 1. original
         if fname not in result:
             result.append(fname)
-            
-        # 2. Lưu dạng snake_case (VD: transaction_id)
-        snake = re.sub(r"(?<!^)(?=[A-Z])", "_", fname).lower()
+
+        # 2. full path
+        if full_name not in result:
+            result.append(full_name)
+
+        # 3. snake_case
+        snake = re.sub(
+            r"(?<!^)(?=[A-Z])",
+            "_",
+            fname
+        ).lower()
+
         if snake not in result:
             result.append(snake)
-            
-        # 3. Lưu dạng Canonical/Synonym (VD: order_id)
+
+        # 4. canonical
         canonical = normalize_param_name(fname)
+
         if canonical not in result:
             result.append(canonical)
 
-    # Array of objects: items → properties
-    items = schema.get("items", {})
-    if items:
-        _collect_fields(items, result, depth + 1)
+        # recurse nested object
+        if details.get("type") == "object":
+            _collect_fields(
+                details,
+                result,
+                depth + 1,
+                full_name
+            )
 
-    # Combiners
-    for combiner in ["allOf", "anyOf", "oneOf"]:
+        # recurse array
+        items = details.get("items")
+        if items:
+            _collect_fields(
+                items,
+                result,
+                depth + 1,
+                full_name
+            )
+
+    for combiner in [
+        "allOf",
+        "anyOf",
+        "oneOf",
+    ]:
         for sub in schema.get(combiner, []):
-            _collect_fields(sub, result, depth + 1)
+            _collect_fields(
+                sub,
+                result,
+                depth + 1,
+                parent
+            )
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -638,10 +680,6 @@ def topological_sort(graph: DependencyGraph) -> list[str]:
 # ══════════════════════════════════════════════════════════════════════
 
 class DependencyResolver:
-    """
-    Điểm vào duy nhất. Planning Agent gọi:
-      graph = DependencyResolver().build(filtered_endpoints, all_chunks)
-    """
 
     def build(self, audits: list[dict], parsed_endpoints: list[APIEndpoint]) -> dict:
         graph = DependencyGraph()
@@ -661,12 +699,38 @@ class DependencyResolver:
             node_id = f"{ep.method}:{ep.path}"
 
             # A. Tìm Consumes (những tham số cần truyền)
-            consumes = [
-                p.name for p in ep.parameters 
-                if p.location in ["path", "query"] or (p.location == "body" and p.required)
-            ]
+            consumes = []
+            
+            # A1. Lấy từ Path và Query parameters
+            for p in ep.parameters:
+                if p.location in ["path", "query"] or (p.location == "body" and p.required):
+                    consumes.append(p.name)
+            
+            # A2. Trích xuất SÂU từ request_body
+            if ep.request_body and isinstance(ep.request_body, dict):
+                schema = ep.request_body.get("content", {}).get("application/json", {}).get("schema", {})
+                
+                def _extract_consumes_from_schema(s, result_list):
+                    if not isinstance(s, dict): return
+                    
+                    # Nếu là object, duyệt qua các properties
+                    for field_name, details in s.get("properties", {}).items():
+                        if field_name not in result_list:
+                            result_list.append(field_name)
+                            
+                        # Gọi đệ quy nếu bên trong field này lại là 1 object khác
+                        if details.get("type") == "object":
+                            _extract_consumes_from_schema(details, result_list)
+                            
+                    # Nếu là mảng (array), duyệt vào items của mảng đó
+                    items = s.get("items", {})
+                    if items:
+                        _extract_consumes_from_schema(items, result_list)
+
+                # Kích hoạt hàm đệ quy để gom tất cả keys vào list `consumes`
+                _extract_consumes_from_schema(schema, consumes)
+
             # B. Tìm Produces (những trường API này trả về)
-            # Tái sử dụng hàm extract_response_fields gốc của bạn truyền vào raw_details
             produces = extract_response_fields({"responses": ep.raw_details.get("responses", {})})
 
             # Lấy thông tin audit từ LLM gán làm tag
@@ -699,9 +763,30 @@ class DependencyResolver:
             resolved_params = {e.param_name for e in graph.get_producers(node_id)}
             still_unresolved = [p for p in node.consumes if p not in resolved_params]
             
-            # (Bạn có thể gọi LLM Fallback ở đây như code gốc nếu muốn)
+            # LLM Fallback cho những param còn lại
             if still_unresolved:
-                unresolved[node_id] = still_unresolved
+                llm_results = llm_resolve_dependencies(node, graph.nodes, still_unresolved)
+                
+                for res in llm_results:
+                    producer_id = res.get("producer_endpoint", "")
+                    produced_field = res.get("produced_field", "")
+                    param_name = res.get("param_name", "")
+                    
+                    if producer_id and produced_field and param_name and (producer_id in graph.nodes):
+                        
+                        graph.edges.append(DependencyEdge(
+                            producer_id=producer_id,
+                            consumer_id=node_id,
+                            param_name=param_name,
+                            resolved_name=produced_field,
+                            resolution_type="llm_fallback",
+                        ))
+                        
+                        if param_name in still_unresolved:
+                            still_unresolved.remove(param_name)
+                            
+                if still_unresolved:
+                    unresolved[node_id] = still_unresolved
 
         # 4. Sắp xếp thứ tự chạy
         execution_order = topological_sort(graph)
