@@ -60,6 +60,7 @@ class SwaggerExtractor:
                     request_body=raw_request_body,
                     raw_details=details
                 )
+                print('endpoint', endpoint)
 
                 endpoints.append(endpoint)  
 

@@ -11,4 +11,5 @@ class Settings:
     LITLE_MODEL_NAME: str = os.getenv("LITLE_MODEL_NAME")
     LARGE_MODEL_NAME: str = os.getenv("LARGE_MODEL_NAME")
     LLM_MAX_RETRIES: int = int(os.getenv("LLM_MAX_RETRIES", "5"))
+    LLAMA_3_3_70B: str = os.getenv("LLAMA_3_3_70B")
 settings = Settings()
