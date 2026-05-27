@@ -3,7 +3,7 @@ MODEL_NAME = "gpt-4o-mini"
 DEFAULT_TEMPERATURE = 0.3
 CHUNK_SIZE = 10
 
-SWAGGER_DEFAULT_PATH = "swagger/api2.json"
+SWAGGER_DEFAULT_PATH = "swagger/api.json"
 KNOWLEDGE_DEFAULT_PATH = "knowledge/owasp_kb.json"
 
 AGENT_SYSTEM_PROMPT = """
