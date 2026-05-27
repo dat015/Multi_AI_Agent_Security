@@ -51,8 +51,8 @@ class EndpointNode:
     request_body: dict           # schema đầy đủ (đã resolve $ref)
     response_schema: dict        # schema của response 2xx
     tags:         list[str]      # OWASP tags từ Recon Agent
-    produces:     list[str]      # field names endpoint này trả về
-    consumes:     list[str]      # parameter names endpoint này cần
+    produces:     list[tuple[str, str]]      # field names endpoint này trả về
+    consumes:     list[dict]      # parameter names endpoint này cần
 
 
 @dataclass
@@ -67,7 +67,7 @@ class DependencyEdge:
     param_name:     str          # tên param trong consumer (gốc)
     resolved_name:  str          # tên field trong response producer
     resolution_type: str         # "exact" | "synonym" | "contextual" | "llm"
-
+    param_tuple:    tuple[str, str]
 
 @dataclass
 class DependencyGraph:
@@ -117,225 +117,96 @@ class DependencyGraph:
             ],
         }
 
+def singularize(word: str) -> str:
+    """Helper đơn giản để chuyển số nhiều thành số ít."""
+    word = word.lower()
+    if word.endswith("ies"): return word[:-3] + "y"
+    if word.endswith("ses") or word.endswith("xes"): return word[:-2]
+    if word.endswith("s") and len(word) > 3: return word[:-1]
+    return word
 
-# ══════════════════════════════════════════════════════════════════════
-# EDGE CASE 1: SYNONYM DICTIONARY
-# ══════════════════════════════════════════════════════════════════════
-SYNONYM_MAP: dict[str, list[str]] = {
-    "user_id": [
-        "userid", "user_id", "uid", "account_id", "accountid",
-        "participant_id", "participantid", "customer_id", "customerid",
-        "member_id", "memberid", "person_id", "personid",
-        "owner_id", "ownerid", "author_id", "authorid",
-        "created_by", "createdby", "requester_id",
-    ],
-    "order_id": [
-        "orderid", "order_id", "transaction_id", "transactionid",
-        "purchase_id", "purchaseid", "booking_id", "bookingid",
-    ],
-    "vehicle_id": [
-        "vehicleid", "vehicle_id", "car_id", "carid",
-        "product_id", "productid",
-    ],
-    "conversation_id": [
-        "conversationid", "conversation_id", "chat_id", "chatid",
-        "thread_id", "threadid", "session_id", "sessionid",
-    ],
-    "message_id": [
-        "messageid", "message_id", "msg_id", "msgid",
-        "comment_id", "commentid", "post_id", "postid",
-    ],
-    "role_id": [
-        "roleid", "role_id", "permission_id", "permissionid",
-        "group_id", "groupid",
-    ],
-    "coupon_id": [
-        "couponid", "coupon_id", "promo_id", "promoid",
-        "voucher_id", "voucherid", "discount_id",
-    ],
-}
-
-# Reverse map: alias → canonical
-_REVERSE_SYNONYM: dict[str, str] = {}
-for canonical, aliases in SYNONYM_MAP.items():
-    for alias in aliases:
-        _REVERSE_SYNONYM[alias.lower()] = canonical
-
-
-def normalize_param_name(raw: str) -> str:
-    """
-    Chuẩn hóa tên parameter về canonical form.
-    
-    Ví dụ:
-      "userId"        → "user_id"
-      "participantId" → "user_id"   (qua synonym map)
-      "id"            → "id"        (ambiguous, xử lý riêng)
-    
-    Tại sao cần bước này?
-    → Developer đặt tên không nhất quán. Nếu so khớp string thô,
-      "userId" và "user_id" sẽ không match dù cùng ý nghĩa.
-    """
-    # camelCase → snake_case
-    snake = re.sub(r"(?<!^)(?=[A-Z])", "_", raw).lower()
-    # Tra synonym map
-    return _REVERSE_SYNONYM.get(snake, snake)
-
-
-# ══════════════════════════════════════════════════════════════════════
-# EDGE CASE 2: AMBIGUOUS ID — CONTEXTUAL INFERENCE
-# ══════════════════════════════════════════════════════════════════════
-
-def resolve_ambiguous_id(param_name: str, path: str) -> str:
-    """
-    Xử lý trường hợp tham số chỉ tên là "id" — rất phổ biến.
-    
-    Thuật toán:
-      1. Tìm path segment ngay trước {id} trong URL
-      2. Singularize segment đó (bỏ 's' cuối nếu là plural)  
-      3. Ghép thành {resource}_id
-    
-    Ví dụ:
-      /api/conversations/{id}  →  conversation_id
-      /api/orders/{id}         →  order_id
-      /api/users/{id}/profile  →  user_id
-    
-    Tại sao không dùng LLM ở đây?
-    → Rule đơn giản, chạy nhanh, không tốn token.
-    → LLM chỉ được gọi khi rule không đủ (trong _llm_resolve_param).
-    """
-    if param_name.lower() not in ("id", "{id}"):
-        return param_name
-
-    # Tách path thành segments, bỏ query string
+def extract_owner(path: str) -> str:
+    """Step 1 - Infer endpoint owner từ path (VD: /users/{id}/wallets -> wallet)"""
     clean_path = path.split("?")[0]
     segments = [s for s in clean_path.split("/") if s and not s.startswith("{")]
-
     if not segments:
-        return param_name
+        return "unknown"
+    return singularize(segments[-1])
 
-    # Lấy segment gần nhất (ngay trước placeholder)
-    resource = segments[-1].lower()
+def infer_ownership_tuple(field_name: str, endpoint_owner: str) -> tuple[str, str]:
+    """
+    Step 2 - Trích xuất (owner, field) từ tên field và context của endpoint.
+    Xử lý Nested Object, Explicit Resource Field và Generic Field.
+    """
+    # Case 3: Nested object (data.user.id -> nearest object là user)
+    if "." in field_name:
+        parts = field_name.split(".")
+        nearest_owner = singularize(parts[-2])
+        leaf_field = parts[-1]
+        return infer_ownership_tuple(leaf_field, nearest_owner)
 
-    # Singularize đơn giản: bỏ 's' cuối nếu có
-    # Đủ dùng cho các trường hợp phổ biến: users→user, orders→order
-    if resource.endswith("ies"):
-        resource = resource[:-3] + "y"   # categories → category
-    elif resource.endswith("ses") or resource.endswith("xes"):
-        resource = resource[:-2]          # addresses → address
-    elif resource.endswith("s") and len(resource) > 3:
-        resource = resource[:-1]          # orders → order
+    snake = re.sub(r"(?<!^)(?=[A-Z])", "_", field_name).lower()
+    
+    # Clean up "{id}" brackets if present
+    clean_snake = snake.replace("{", "").replace("}", "")
 
-    return f"{resource}_id"
+    # Case 1: Generic field (id, name, status)
+    if clean_snake == "id":
+        return (endpoint_owner, "id")
+        
+    # Case 2: Explicit resource field (user_id, wallet_id)
+    if clean_snake.endswith("_id"):
+        resource = clean_snake[:-3]
+        return (singularize(resource), "id")
 
+    # Generic properties
+    return (endpoint_owner, clean_snake)
 
 # ══════════════════════════════════════════════════════════════════════
 # RESPONSE SCHEMA PARSER — trích xuất field names từ schema
 # ══════════════════════════════════════════════════════════════════════
 
-def extract_response_fields(endpoint_data: dict) -> list[str]:
-    """
-    Trích xuất tất cả field names từ response schema của endpoint.
-    Hỗ trợ: object properties, array of objects, allOf/anyOf.
-    
-    Tại sao cần hàm này?
-    → Producer được nhận diện qua response schema, không chỉ qua URL.
-    → POST /users trả về {"id": ..., "email": ..., "role": ...}
-      → produces = ["id", "email", "role", "user_id" (normalized)]
-    """
+def extract_response_fields(endpoint_data: dict, endpoint_owner: str) -> list[tuple[str, str]]:
     fields = []
     responses = endpoint_data.get("responses", {})
 
-    # Ưu tiên 200, 201, 202
     for status in ["200", "201", "202"]:
         if status not in responses:
             continue
-        schema = (
-            responses[status]
-            .get("content", {})
-            .get("application/json", {})
-            .get("schema", {})
-        )
+        schema = responses[status].get("content", {}).get("application/json", {}).get("schema", {})
         _collect_fields(schema, fields)
         if fields:
             break
 
-    return list(set(fields))
+    # Convert tất cả raw path (data.user.id) thành Tuple
+    tuples = set()
+    for f in fields:
+        tuples.add(infer_ownership_tuple(f, endpoint_owner))
+        
+    return list(tuples)
 
 
-def _collect_fields(
-    schema: dict,
-    result: list,
-    depth: int = 0,
-    parent: str = "",
-):
-    if depth > 6 or not isinstance(schema, dict):
-        return
-
+def _collect_fields(schema: dict, result: list, depth: int = 0, parent: str = ""):
+    if depth > 6 or not isinstance(schema, dict): return
     properties = schema.get("properties", {})
 
     for fname, details in properties.items():
+        # CHỈ TẠO full_path (VD: "data.user.id")
+        full_name = f"{parent}.{fname}" if parent else fname
 
-        full_name = (
-            f"{parent}.{fname}"
-            if parent
-            else fname
-        )
-
-        # 1. original
-        if fname not in result:
-            result.append(fname)
-
-        # 2. full path
         if full_name not in result:
             result.append(full_name)
 
-        # 3. snake_case
-        snake = re.sub(
-            r"(?<!^)(?=[A-Z])",
-            "_",
-            fname
-        ).lower()
-
-        if snake not in result:
-            result.append(snake)
-
-        # 4. canonical
-        canonical = normalize_param_name(fname)
-
-        if canonical not in result:
-            result.append(canonical)
-
-        # recurse nested object
         if details.get("type") == "object":
-            _collect_fields(
-                details,
-                result,
-                depth + 1,
-                full_name
-            )
-
-        # recurse array
+            _collect_fields(details, result, depth + 1, full_name)
+        
         items = details.get("items")
         if items:
-            _collect_fields(
-                items,
-                result,
-                depth + 1,
-                full_name
-            )
+            _collect_fields(items, result, depth + 1, full_name)
 
-    for combiner in [
-        "allOf",
-        "anyOf",
-        "oneOf",
-    ]:
+    for combiner in ["allOf", "anyOf", "oneOf"]:
         for sub in schema.get(combiner, []):
-            _collect_fields(
-                sub,
-                result,
-                depth + 1,
-                parent
-            )
+            _collect_fields(sub, result, depth + 1, parent)
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -343,50 +214,22 @@ def _collect_fields(
 # ══════════════════════════════════════════════════════════════════════
 
 def find_producer(
-    param_name: str,
-    param_canonical: str,
+    consumer_tuple: tuple[str, str],
     all_nodes: dict[str, EndpointNode],
     exclude_id: str,
 ) -> Optional[tuple[str, str, str]]:
-    """
-    Tìm endpoint nào sinh ra giá trị cho param_canonical.
-    
-    Trả về: (producer_node_id, resolved_field_name, resolution_type)
-    hoặc None nếu không tìm được.
-    
-    Chiến lược tìm (theo thứ tự ưu tiên):
-      1. Exact match: producer.produces chứa đúng param_canonical
-      2. Synonym match: canonical của producer field == canonical của param
-      3. Path-based: endpoint POST có path liên quan đến resource
-    """
-    resource = param_canonical.replace("_id", "").replace("_", "")
-
-    # Ưu tiên POST/PUT (create operations) trước
     priority_methods = ["POST", "PUT", "GET"]
-    snake_name = re.sub(r"(?<!^)(?=[A-Z])", "_", param_name).lower()
+    
     for method in priority_methods:
         for node_id, node in all_nodes.items():
             if node_id == exclude_id or node.method != method:
                 continue
-            if param_name in node.produces:
-                return (node_id, param_name, "exact")
-            # 1. Exact match trong produces list
-            if param_canonical in node.produces:
-                return (node_id, param_canonical, "exact")
-            if snake_name in node.produces:
-                return (node_id, snake_name, "exact_snake")
-            # 2. Synonym match
-            for produced_field in node.produces:
-                if normalize_param_name(produced_field) == param_canonical:
-                    return (node_id, produced_field, "synonym")
-
-            # 3. Path-based heuristic: POST /users → produces user_id
-            if method == "POST":
-                path_lower = node.path.lower().replace("/", " ").replace("-", " ")
-                if resource in path_lower:
-                    # Endpoint này likely sinh ra resource_id
-                    return (node_id, "id", "contextual")
-
+            
+            # Semantic Matching: Compare Tuple vs Tuple
+            if consumer_tuple in node.produces:
+                resolved_field_name = f"{consumer_tuple[0]}.{consumer_tuple[1]}"
+                return (node_id, resolved_field_name, "semantic_tuple")
+                
     return None
 
 
@@ -395,66 +238,39 @@ def find_producer(
 # ══════════════════════════════════════════════════════════════════════
 
 def resolve_chain(
-    start_node_id: str,
-    all_nodes:     dict[str, EndpointNode],
-    graph:         DependencyGraph,
-    visited:       set[str],
-    depth:         int = 0,
-    max_depth:     int = 3,
+    start_node_id: str, all_nodes: dict[str, EndpointNode],
+    graph: DependencyGraph, visited: set[str],
+    depth: int = 0, max_depth: int = 3,
 ) -> None:
-    """
-    DFS từ start_node, tìm tất cả dependency và thêm edge vào graph.
-    
-    max_depth = 3: giới hạn độ sâu tối đa.
-    Tại sao 3?
-    → Đủ cho hầu hết real-world API chains:
-      POST /users → POST /orders → POST /payments
-    → Sâu hơn thường là data model quá phức tạp, không
-      phù hợp test tự động trong thời gian ngắn.
-    
-    visited: tránh cycle (A → B → A → vòng lặp vô tận)
-    """
-    if depth >= max_depth or start_node_id in visited:
-        return
-
+    if depth >= max_depth or start_node_id in visited: return
     visited.add(start_node_id)
     node = all_nodes.get(start_node_id)
-    if not node:
-        return
+    if not node: return
 
-    for param_name in node.consumes:
-        # Normalize param name (xử lý edge case 1 + 2)
-        if param_name.lower() in ("id", "{id}"):
-            canonical = resolve_ambiguous_id(param_name, node.path)
-        else:
-            canonical = normalize_param_name(param_name)
+    for consume_item in node.consumes:
+        param_name = consume_item["raw_name"]
+        consumer_tuple = consume_item["tuple"]
 
-        # Tìm producer cho param này
         result = find_producer(
-            param_name=param_name, 
-            param_canonical=canonical, 
-            all_nodes=all_nodes, 
+            consumer_tuple=consumer_tuple,
+            all_nodes=all_nodes,
             exclude_id=start_node_id
         )
 
         if result:
             producer_id, resolved_field, res_type = result
-            # Tránh thêm edge trùng lặp
-            existing = {(e.producer_id, e.consumer_id, e.param_name)
-                        for e in graph.edges}
+            existing = {(e.producer_id, e.consumer_id, e.param_name) for e in graph.edges}
+            
             if (producer_id, start_node_id, param_name) not in existing:
                 graph.edges.append(DependencyEdge(
-                    producer_id=    producer_id,
-                    consumer_id=    start_node_id,
-                    param_name=     param_name,
-                    resolved_name=  resolved_field,
+                    producer_id=producer_id,
+                    consumer_id=start_node_id,
+                    param_name=param_name,
+                    param_tuple=consumer_tuple,
+                    resolved_name=resolved_field,
                     resolution_type=res_type,
                 ))
-            # Đệ quy: producer này có phụ thuộc gì không?
-            resolve_chain(
-                producer_id, all_nodes, graph, visited,
-                depth + 1, max_depth
-            )
+            resolve_chain(producer_id, all_nodes, graph, visited, depth + 1, max_depth)
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -697,14 +513,17 @@ class DependencyResolver:
         # 2. Xây dựng EndpointNode từ parsed_endpoints
         for ep in parsed_endpoints:
             node_id = f"{ep.method}:{ep.path}"
+            
+            # --- BƯỚC MỚI: Trích xuất Owner của endpoint hiện tại ---
+            endpoint_owner = extract_owner(ep.path)
 
             # A. Tìm Consumes (những tham số cần truyền)
-            consumes = []
+            consumes_raw_list = []
             
             # A1. Lấy từ Path và Query parameters
             for p in ep.parameters:
                 if p.location in ["path", "query"] or (p.location == "body" and p.required):
-                    consumes.append(p.name)
+                    consumes_raw_list.append(p.name)
             
             # A2. Trích xuất SÂU từ request_body
             if ep.request_body and isinstance(ep.request_body, dict):
@@ -727,11 +546,22 @@ class DependencyResolver:
                     if items:
                         _extract_consumes_from_schema(items, result_list)
 
-                # Kích hoạt hàm đệ quy để gom tất cả keys vào list `consumes`
-                _extract_consumes_from_schema(schema, consumes)
+                # Kích hoạt hàm đệ quy để gom tất cả keys vào list `consumes_raw_list`
+                _extract_consumes_from_schema(schema, consumes_raw_list)
 
-            # B. Tìm Produces (những trường API này trả về)
-            produces = extract_response_fields({"responses": ep.raw_details.get("responses", {})})
+            # --- BƯỚC MỚI: Ánh xạ biến thô sang Semantic Tuple ---
+            consumes = []
+            for raw_name in set(consumes_raw_list):
+                consumes.append({
+                    "raw_name": raw_name,
+                    "tuple": infer_ownership_tuple(raw_name, endpoint_owner)
+                })
+
+            # B. Tìm Produces (những trường API này trả về - đã chuyển sang list[tuple])
+            produces = extract_response_fields(
+                {"responses": ep.raw_details.get("responses", {})},
+                endpoint_owner
+            )
 
             # Lấy thông tin audit từ LLM gán làm tag
             llm_audit = audit_map.get(node_id, {})
@@ -749,7 +579,7 @@ class DependencyResolver:
                 response_schema={}, 
                 tags=tags,
                 produces=produces,
-                consumes=consumes,
+                consumes=consumes, # Gán list of dict đã chứa tuple
             )
             graph.nodes[node_id] = node
 
@@ -761,7 +591,10 @@ class DependencyResolver:
 
             # Check xem còn param nào thiếu
             resolved_params = {e.param_name for e in graph.get_producers(node_id)}
-            still_unresolved = [p for p in node.consumes if p not in resolved_params]
+            
+            # Trích xuất lại raw_name từ consumes để check thiếu
+            all_consumes_names = [c["raw_name"] for c in node.consumes]
+            still_unresolved = [p for p in all_consumes_names if p not in resolved_params]
             
             # LLM Fallback cho những param còn lại
             if still_unresolved:
@@ -773,11 +606,14 @@ class DependencyResolver:
                     param_name = res.get("param_name", "")
                     
                     if producer_id and produced_field and param_name and (producer_id in graph.nodes):
-                        
+                        # Sinh tuple fallback để Data Class đồng bộ
+                        fallback_tuple = infer_ownership_tuple(param_name, extract_owner(node.path))
+
                         graph.edges.append(DependencyEdge(
                             producer_id=producer_id,
                             consumer_id=node_id,
                             param_name=param_name,
+                            param_tuple=fallback_tuple, # Đã cập nhật thuộc tính mới này ở DependencyEdge
                             resolved_name=produced_field,
                             resolution_type="llm_fallback",
                         ))
