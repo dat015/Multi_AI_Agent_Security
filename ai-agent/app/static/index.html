@@ -240,7 +240,8 @@
       <div class="controls">
         <select id="phaseSelect">
           <option value="phase1">Phase 1 — Recon + Planning</option>
-          <option value="full">Full Pipeline (5 agents)</option>
+          <option value="phase2" selected>Phase 2 — Recon + Planning + Execution + Analyzer</option>
+          <option value="full">Full Pipeline (Vòng lặp)</option>
         </select>
         <input
           type="number"
@@ -404,6 +405,7 @@
 
         const phase = document.getElementById("phaseSelect").value;
         const maxIter = document.getElementById("maxIter").value;
+        const configId = configIdInput.value.trim(); // ← lấy config_id đã upload
 
         // Reset UI
         document.getElementById("statusBox").style.display = "block";
@@ -417,11 +419,12 @@
         const formData = new FormData();
         formData.append("file", selectedFile);
 
+        // Xây dựng URL kèm config_id nếu có
+        let url = `/api/agent/analyze?phase=${phase}&max_iter=${maxIter}`;
+        if (configId) url += `&config_id=${configId}`;
+
         try {
-          const res = await fetch(
-            `/api/agent/analyze?phase=${phase}&max_iter=${maxIter}`,
-            { method: "POST", body: formData },
-          );
+          const res = await fetch(url, { method: "POST", body: formData });
           const data = await res.json();
           currentSessionId = data.session_id;
 
