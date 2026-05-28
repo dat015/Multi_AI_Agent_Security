@@ -11,6 +11,7 @@ from app.core.auth_manager import AuthManager
 from app.core.constants import CONFIG_TEMPLATE
 from app.core.credential_store import CredentialStore
 from app.validator.config_validator import ConfigValidator
+from app.core.session_store import CONFIG_STORE  # ← shared store
 
 app = FastAPI(title="API Security Tester", version="1.0.0")
 
@@ -47,8 +48,7 @@ app.include_router(
 )
 
 
-# In-memory store for uploaded configs (simple, process-lifetime)
-CONFIG_STORE = {}
+# CONFIG_STORE được import từ app.core.session_store (shared với agent_controller)
 
 
 @app.get("/config/template")

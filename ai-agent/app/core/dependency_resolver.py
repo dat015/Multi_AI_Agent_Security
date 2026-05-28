@@ -29,7 +29,8 @@ from langchain_openai import ChatOpenAI
 from app.schemas.api_schema import APIEndpoint
 from collections import defaultdict
 from app.helper.make_graph_image import visualize_dependency_graph
-llm = ChatOpenAI(model="gpt-4o", temperature=0)
+from app.core.config import settings
+llm = ChatOpenAI(model=settings.LLAMA_3_3_70B, api_key=settings.GROQ_API_KEY, temperature=0)
 logger = logging.getLogger(__name__)
 
 # ══════════════════════════════════════════════════════════════════════

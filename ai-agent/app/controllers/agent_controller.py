@@ -8,11 +8,12 @@ from typing import Optional
 
 from app.core.orchestrator import build_graph
 from app.core.state import SystemState
+from app.core.session_store import CONFIG_STORE, SESSION_STORE  # ← shared stores
 
 router = APIRouter()
 
-# Lưu trạng thái các session đang chạy (Tạm thời dùng Dict cho local)
-session_store: dict[str, dict] = {}
+# Dùng SESSION_STORE từ shared module (thay cho local dict cũ)
+session_store = SESSION_STORE
 
 # ── Schema response ────────────────────────────────────────────────────
 class AnalysisResult(BaseModel):
@@ -28,7 +29,8 @@ class AnalysisResult(BaseModel):
 async def analyze(
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
-    phase: str = "phase1",
+    phase: str = "full",              # ← đổi default sang "full"
+    config_id: Optional[str] = None,  # ← nhận config_id từ frontend
     max_iter: int = 5,
 ):
     if not file.filename.endswith((".yaml", ".yml", ".json")):
@@ -42,6 +44,9 @@ async def analyze(
 
     spec_format = "json" if file.filename.endswith(".json") else "yaml"
     session_id = str(uuid.uuid4())
+
+    # Lấy config từ CONFIG_STORE dứa trên config_id frontend gửi lên
+    user_config = CONFIG_STORE.get(config_id, {}) if config_id else {}
 
     session_store[session_id] = {
         "status": "running",
@@ -58,6 +63,7 @@ async def analyze(
         spec_content=spec_content,
         spec_format=spec_format,
         phase=phase,
+        user_config=user_config,   # ← truyền config vào pipeline
         max_iter=max_iter,
     )
 
@@ -85,27 +91,32 @@ def download_plan(session_id: str):
         filename=f"test_plan_{session_id}.json"
     )
 
-# ── Hàm Service (Logic chạy ngầm) ─────────────────────────────────────
+# ── Hàm Service (Logic chạy ngầm) ─────────────────────────────────────────────────────
 def run_pipeline(
     session_id: str,
     spec_content: str,
     spec_format: str,
     phase: str,
+    user_config: dict,   # ← nhận config từ caller
     max_iter: int,
 ):
     try:
         initial_state: SystemState = {
             "raw_spec": spec_content,
             "spec_format": spec_format,
+            "config": user_config,          # ← đưa config vào state
             "filtered_endpoints": [],
             "recon_summary": "",
+            "dependency_graph": {},         # ← recon_node sẽ ghi vào
+            "markdown_chunks": [],          # ← recon_node sẽ ghi vào
             "test_plan": [],
+            "execution_results": [],        # ← execution_node sẽ ghi vào
             "current_endpoint": None,
             "raw_traffic": [],
-            "vuln_fion_count": 0,
-            "max_itndings": [],
-            "iteratierations": max_iter,
+            "vuln_findings": [],
+            "iteration_count": 0,
             "confidence_score": 0.0,
+            "max_iterations": max_iter,
             "final_report": None,
             "error": None,
         }
@@ -113,11 +124,8 @@ def run_pipeline(
         graph = build_graph(phase=phase)
         config = {"configurable": {"thread_id": session_id}}
 
-        final_state = None
-        for event in graph.stream(initial_state, config=config):
-            for node_output in event.values():
-                if isinstance(node_output, dict):
-                    final_state = node_output
+        # Dùng invoke() — trả về toàn bộ final state sau khi graph kết thúc
+        final_state = graph.invoke(initial_state, config=config)
 
         if not final_state:
             raise ValueError("Pipeline không trả về kết quả")
@@ -125,7 +133,7 @@ def run_pipeline(
         output_dir = Path("outputs")
         output_dir.mkdir(exist_ok=True)
         plan_path = output_dir / f"{session_id}_test_plan.json"
-        
+
         with open(plan_path, "w", encoding="utf-8") as f:
             json.dump(final_state.get("test_plan", []), f, ensure_ascii=False, indent=2)
 
