@@ -61,21 +61,23 @@ class LLMService:
             logger.error(f"Lỗi khi gọi LLM (generate_json): {e}")
             raise
 
-    def generate_structured(self, prompt_messages: list, input_variables: dict, pydantic_schema: type[BaseModel], fallback_method="json_mode"): # <-- Chuyển mặc định sang json_mode
+    def generate_structured(self, prompt_messages: list, input_variables: dict, pydantic_schema: type[BaseModel], fallback_method="json_mode"):
         """
-        Dùng cho Planning Agent: Ép kiểu dữ liệu trực tiếp ra Pydantic Object.
+        Dùng cho Planning/Analyzer Agent: Ép kiểu dữ liệu trực tiếp ra Pydantic Object.
+
+        NOTE: Khi input_variables={} (không có template variable thật),
+        ta invoke messages trực tiếp thay vì qua ChatPromptTemplate.
+        Lý do: ChatPromptTemplate parse {} trong chuỗi như template placeholder,
+        gây lỗi nếu message chứa JSON (vốn có {} của riêng nó).
         """
         try:
-            prompt_template = ChatPromptTemplate.from_messages(prompt_messages)
-            
-            # ÉP LANGCHAIN KHÔNG DÙNG json_schema NỮA BẰNG CÁCH CHỈ ĐỊNH method
             structured_llm = self.llm.with_structured_output(
-                pydantic_schema, 
-                method=fallback_method # Sẽ sử dụng "json_mode"
+                pydantic_schema,
+                method=fallback_method
             )
-            
-            chain = prompt_template | structured_llm
+
             max_retries = getattr(settings, "LLM_MAX_RETRIES", 5)
+
             @retry(
                 wait=wait_exponential(multiplier=2, min=2, max=16),
                 stop=stop_after_attempt(max_retries),
@@ -84,11 +86,19 @@ class LLMService:
                 reraise=True,
             )
             def _call():
-                return chain.invoke(input_variables)
+                if not input_variables:
+                    # Không có template variable → invoke trực tiếp
+                    # Tránh ChatPromptTemplate parse {} trong JSON thành placeholder
+                    return structured_llm.invoke(prompt_messages)
+                else:
+                    # Có template variable thật → dùng ChatPromptTemplate bình thường
+                    prompt_template = ChatPromptTemplate.from_messages(prompt_messages)
+                    chain = prompt_template | structured_llm
+                    return chain.invoke(input_variables)
 
             result = _call()
-
             return result
+
         except Exception as e:
             logger.error(f"Lỗi khi gọi LLM (generate_structured): {e}")
-            raise
+            raise
