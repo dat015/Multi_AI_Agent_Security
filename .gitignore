@@ -14,6 +14,9 @@ ENV/
 # 2. Bỏ qua thư mục chứa kết quả phân tích của RESTler (grammar.json, dict.json...)
 /ai-agent/restler_output/
 /ai-agent/temp_uploads/
+/ai-agent/RestlerLogs/
+/ai-agent/Compile/
+/ai-agent/lib/
 
 # 3. Bỏ qua file đầu vào tạm thời (tránh đẩy Swagger nhạy cảm lên Git)
 /ai-agent/*.json

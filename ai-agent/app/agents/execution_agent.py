@@ -116,17 +116,22 @@ def execution_node(state: dict) -> dict:
             logger.error(f"   [-] '{role}': Lỗi Auth - {e}")
             
     execution_results = []
-    
-    # Dùng httpx Client để reuse connection (nhanh hơn requests)
+
+    # FIX #1: Tách setup và attack, chạy setup TRƯỚC
+    # Setup step (is_attack=False) cần chạy trước để set biến cho attack dùng
+    setup_plans  = [p for p in test_plans if not p.get("is_attack", False)]
+    attack_plans = [p for p in test_plans if     p.get("is_attack", False)]
+    ordered_plans = setup_plans + attack_plans
+    logger.info(f">> Thứ tự: {len(setup_plans)} setup step chạy trước, {len(attack_plans)} attack step chạy sau")
+
     with httpx.Client(verify=False, timeout=15.0) as client:
-        
-        # 4. Vòng lặp thực thi
-        for plan in test_plans:
-            node_id = plan.get("node_id")
-            method = plan.get("method", "GET").upper()
+
+        for plan in ordered_plans:
+            node_id   = plan.get("node_id")
+            method    = plan.get("method", "GET").upper()
             is_attack = plan.get("is_attack", False)
-            steps = plan.get("test_steps", [])
-            
+            steps     = plan.get("test_steps", [])
+
             logger.info(f"\n>> Thực thi {node_id} (Attack: {is_attack})")
             
             # API Setup Data chạy cho cả 2 để lấy đủ ID (BOLA cross-check)
@@ -139,10 +144,11 @@ def execution_node(state: dict) -> dict:
 
                 for step in steps:
                     # Resolve toàn bộ payload qua VariableStore
-                    path_params = var_store.resolve_payload(step.get("path_params", {}))
-                    query_params = var_store.resolve_payload(step.get("query_params", {}))
-                    headers = var_store.resolve_payload(step.get("headers", {}))
-                    body = var_store.resolve_payload(step.get("body"))
+                    # Dùng `or {}` để handle cả key thiếu lẫn giá trị null từ test plan
+                    path_params  = var_store.resolve_payload(step.get("path_params")  or {}) or {}
+                    query_params = var_store.resolve_payload(step.get("query_params") or {}) or {}
+                    headers      = var_store.resolve_payload(step.get("headers")      or {}) or {}
+                    body         = var_store.resolve_payload(step.get("body"))
                     
                     # Cứu cánh: Nếu step không định nghĩa header Authorization, lấy từ AuthManager
                     if "Authorization" not in headers:
@@ -176,17 +182,51 @@ def execution_node(state: dict) -> dict:
                         except Exception:
                             response_json = {"raw_text": response.text}
                         
-                        # Trích xuất biến nếu là API mồi
+                        # FIX #2: Trích xuất biến nếu là API mồi (setup step)
                         if not is_attack and response.status_code in (200, 201):
-                            possible_keys = ["id", "walletId", "transactionId", "userId", "cardId"]
-                            for key in possible_keys:
-                                extracted_val = extract_value_from_response(response_json, key)
-                                if extracted_val:
-                                    semantic_namespace = key.replace("Id", "").lower()
-                                    if semantic_namespace == "id": semantic_namespace = "item"
-                                    
-                                    var_store.set(role, f"{semantic_namespace}.id", extracted_val)
-                                    logger.info(f"   => [Lưu] {semantic_namespace}.id = {extracted_val} cho {role}")
+                            # Suy ra resource name từ endpoint path
+                            # VD: endpoint="/Category" → "category"
+                            #     endpoint="/PurchaseOrder" → "purchaseorder"
+                            endpoint_path = plan.get("endpoint", "").strip("/")
+                            path_segs = [s for s in endpoint_path.split("/")
+                                         if s and not s.startswith("{")]
+                            resource_name = path_segs[-1].lower() if path_segs else "item"
+
+                            # Tìm tất cả key dạng *id* trong response (đệ quy)
+                            def find_id_fields(data, found=None):
+                                if found is None: found = {}
+                                if isinstance(data, dict):
+                                    for k, v in data.items():
+                                        if k.lower() == "id" or k.lower().endswith("id"):
+                                            if v is not None:
+                                                found[k] = v
+                                        elif isinstance(v, (dict, list)):
+                                            find_id_fields(v, found)
+                                elif isinstance(data, list) and data:
+                                    find_id_fields(data[0], found)
+                                return found
+
+                            id_fields = find_id_fields(response_json)
+
+                            for key, val in id_fields.items():
+                                k_lower = key.lower()
+                                if k_lower == "id":
+                                    # Generic "id" → dùng resource name từ endpoint
+                                    sem_key = f"{resource_name}.id"
+                                else:
+                                    # "categoryId" → "categoryid" → bỏ "id" → "category.id"
+                                    sem_key = f"{k_lower[:-2]}.id"
+
+                                var_store.set(role, sem_key, val)
+                                logger.info(f"   => [Lưu] {sem_key} = {val} cho '{role}'")
+
+                                # FIX #3: Nếu victim không có trong config,
+                                # fallback lưu vào victim namespace để {{xxx_B}} vẫn có giá trị
+                                if role == "attacker" and "victim" not in cred_store.all_roles():
+                                    var_store.set("victim", sem_key, val)
+                                    logger.info(f"   => [Fallback victim] {sem_key} = {val}")
+
+
                         
                         execution_results.append({
                             "node_id": node_id,

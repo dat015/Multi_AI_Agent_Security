@@ -1,0 +1,19 @@
+{
+  "target": {
+    "base_url": "https://localhost:7094",
+    "login_endpoint": "/api/auth/login",
+    "refresh_endpoint": "/api/auth/refresh"
+  },
+  "users": [
+    {
+      "role": "admin",
+      "email": "dat12@gmail.com",
+      "password": "12345"
+    },
+    {
+      "role": "attacker",
+      "email": "dat121@gmail.com",
+      "password": "12345"
+    }
+  ]
+}

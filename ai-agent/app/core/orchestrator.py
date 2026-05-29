@@ -29,46 +29,46 @@ def dummy_reporting_node(state: SystemState) -> dict:
 def build_graph(phase: str = "phase2") -> any:
     graph = StateGraph(SystemState)
 
-    graph.add_node("recon", recon_node)
-    graph.add_node("planning", planning_node)
-    graph.set_entry_point("recon")
-    graph.add_edge("recon", "planning")
-
     if phase == "phase1":
         print("Chạy PHASE 1: Recon ➔ Planning")
+        graph.add_node("recon", recon_node)
+        graph.add_node("planning", planning_node)
+        graph.set_entry_point("recon")
+        graph.add_edge("recon", "planning")
         graph.add_edge("planning", END)
 
     elif phase == "phase2":
         print("Chạy PHASE 2: Recon ➔ Planning ➔ Execution ➔ Analyzer")
+        graph.add_node("recon", recon_node)
+        graph.add_node("planning", planning_node)
         graph.add_node("execution", execution_node)
         graph.add_node("analyzer", analyzer_node)
-
+        graph.set_entry_point("recon")
+        graph.add_edge("recon", "planning")
         graph.add_edge("planning", "execution")
         graph.add_edge("execution", "analyzer")
-        graph.add_edge("analyzer", END) 
+        graph.add_edge("analyzer", END)
 
     elif phase == "exec_only":
         print("Chạy PHASE: Execution (từ Test Plan có sẵn) ➔ Analyzer")
+        # Chỉ add đúng 2 node cần thiết — không có recon/planning
         graph.add_node("execution", execution_node)
         graph.add_node("analyzer", analyzer_node)
-
-        # Bỏ qua Recon và Planning, đi thẳng vào Execution
         graph.set_entry_point("execution")
         graph.add_edge("execution", "analyzer")
         graph.add_edge("analyzer", END)
 
     elif phase == "full":
         print("Chạy FULL PIPELINE (Có vòng lặp)")
+        graph.add_node("recon", recon_node)
+        graph.add_node("planning", planning_node)
         graph.add_node("execution", execution_node)
-        graph.add_node("analyzer",  analyzer_node)
-        
-        # Thêm node giả vào để thỏa mãn LangGraph
-        graph.add_node("reporting", dummy_reporting_node) 
-
-        graph.add_edge("planning",   "execution")
-        graph.add_edge("execution",  "analyzer")
-
-        # Rẽ nhánh
+        graph.add_node("analyzer", analyzer_node)
+        graph.add_node("reporting", dummy_reporting_node)
+        graph.set_entry_point("recon")
+        graph.add_edge("recon", "planning")
+        graph.add_edge("planning", "execution")
+        graph.add_edge("execution", "analyzer")
         graph.add_conditional_edges(
             "analyzer",
             should_continue_or_report,
@@ -77,8 +77,6 @@ def build_graph(phase: str = "phase2") -> any:
                 "reporting": "reporting",
             }
         )
-
-        # Nối từ reporting ra END thì LangGraph sẽ không báo lỗi nữa
         graph.add_edge("reporting", END)
 
     memory = MemorySaver()
