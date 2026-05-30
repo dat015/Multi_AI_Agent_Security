@@ -2,9 +2,10 @@ from openai import OpenAI
 from app.core.config import settings
 from app.core.constants import AGENT_SYSTEM_PROMPT
 import json
+import os
 from pathlib import Path
 from app.modules.parser.swagger_parser import SwaggerParser
-from app.core.dependency_resolver import DependencyResolver
+from app.core.restler_parser import build_dependency_graph_from_restler
 from app.security.security_analyzer import SecurityAnalyzer
 from app.core.constants import SWAGGER_DEFAULT_PATH
 from app.modules.parser.swagger_extractor import SwaggerExtractor
@@ -16,7 +17,7 @@ class ReconAgent:
             base_url=settings.URL_LLM,
             api_key=settings.GROQ_API_KEY 
         )
-        self.expert_model = settings.LLAMA_3_3_70B
+        self.expert_model = settings.GPT_OOS_20B
 
     def load_kb(self):
         kb_path = Path(__file__).resolve().parent.parent.parent / "knowledge" / "owasp_kb.json"
@@ -72,23 +73,18 @@ def recon_node(state):
     spec_format = state["spec_format"]
 
     spec = SwaggerParser.parse(spec_content, spec_format)
-    # print("spec", spec)
     parsed_data = SwaggerExtractor.extract(spec)
-    # print('pasred_data', parsed_data)
     potential_threats = SecurityAnalyzer.analyze(parsed_data.endpoints)
-    # Lưu potential_threats vào thư mục outputs để dễ xem
-    #print('analyze', potential_threats)
+
     markdown_chunks = chunk_endpoints_to_markdown(potential_threats, chunk_size=10)
     
 
     agent = ReconAgent()
-    aggregated_scenarios = [] # Nơi chứa toàn bộ kịch bản tấn công của tất cả chunks
+    aggregated_scenarios = [] 
 
-    # 3. Duyệt qua từng chunk và gọi LLM
     for i, chunk in enumerate(markdown_chunks):
         print(f"> Đang Audit Chunk {i+1}/{len(markdown_chunks)}...")
         
-        # Đưa Markdown vào Agent
         result_str = agent.audit(normalized_data=chunk["page_content"])
         
         try:
@@ -108,12 +104,29 @@ def recon_node(state):
         except Exception as e:
             print(f"Lỗi không xác định ở Chunk {i+1}: {e}")
 
-    print(f"KẾT QUẢ RECON: Thu thập được tổng cộng {len(aggregated_scenarios)} attack scenarios.")
-    resolver = DependencyResolver()
-    dependency_data = resolver.build(
-        audits=aggregated_scenarios, 
-        parsed_endpoints=parsed_data.endpoints
-    )
+    print(f"Kết QUẢ RECON: Thu thập được tổng cộng {len(aggregated_scenarios)} attack scenarios.")
+
+    compile_path = state.get("config", {}).get("restler_compile_path", "Compile")
+    grammar_path = os.path.join(compile_path, "grammar.json")
+    deps_path    = os.path.join(compile_path, "dependencies.json")
+
+    try:
+        dependency_data = build_dependency_graph_from_restler(grammar_path, deps_path)
+        print(f"[RestlerParser] OK: {dependency_data['stats']['total_nodes']} nodes")
+    except FileNotFoundError as e:
+        print(f"[RestlerParser] Cảnh báo: Không tìm thấy file RESTler ({e}). Dùng graph rỗng.")
+        dependency_data = {
+            "execution_order": [],
+            "graph": {"nodes": {}},
+            "stats": {"total_nodes": 0, "source": "empty"},
+        }
+    except Exception as e:
+        print(f"[RestlerParser] Lỗi không xác định: {e}. Dùng graph rỗng.")
+        dependency_data = {
+            "execution_order": [],
+            "graph": {"nodes": {}},
+            "stats": {"total_nodes": 0, "source": "error"},
+        }
     save_json_file(
         data={
             "summary": {

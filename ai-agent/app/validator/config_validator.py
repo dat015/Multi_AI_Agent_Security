@@ -179,7 +179,7 @@ class ConfigValidator:
         if not isinstance(users, list):
             return
 
-        roles_seen:  dict[str, int] = {}  
+        roles_seen:  dict[str, int] = {}
         emails_seen: dict[str, int] = {}
 
         for i, user in enumerate(users):
@@ -188,6 +188,9 @@ class ConfigValidator:
 
             role  = user.get("role", "")
             email = user.get("email", "")
+
+            if role:
+                roles_seen[role] = i
 
             # Kiểm tra email trùng
             if email:

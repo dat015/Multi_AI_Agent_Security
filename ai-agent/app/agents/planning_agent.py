@@ -8,6 +8,11 @@ import logging
 from app.services.llm_service import LLMService
 from app.core.config import settings 
 from app.core.constants import AGENT_SYSTEM_PROMPT
+from app.core.restler_parser import (
+    build_setup_body,
+    build_setup_path_params,
+    build_setup_query_params,
+)
 from typing import Union
 
 # Định nghĩa cấu trúc dữ liệu đầu ra bắt buộc bằng Pydantic
@@ -54,45 +59,57 @@ def load_owasp_kb(owasp_id: str) -> dict:
         print(f"Lỗi khi đọc file owasp_kb.json: {e}")
         return {}
 
-def plan_for_endpoint(node_id: str, node_info: dict, recon_item: dict = None) -> list:
+def plan_for_endpoint(node_id: str, node_info: dict, recon_item: dict = None, users: list = None) -> list:
     """
     Sinh kịch bản cho một API endpoint.
     - Nếu có recon_item (có lỗ hổng): Lặp qua từng loại lỗi và sinh các kịch bản tấn công riêng biệt.
-    - Nếu không (chỉ là Producer an toàn): Sinh 1 kịch bản hợp lệ để lấy data.
+    - Nếu không (API mồi an toàn): Build body deterministically từ RESTler body_schema.
     """
-    path = node_info.get("path")
+    path   = node_info.get("path")
     method = node_info.get("method")
-    
-    # --- XỬ LÝ FORMAT MỚI CỦA DEPENDENCY GRAPH ---
+
     raw_consumes = node_info.get("consumes", [])
     raw_produces = node_info.get("produces", [])
-    
-    # Chuyển consumes thành mapping dict: {"walletId": "wallet.id"}
-    consumes_mapping = {}
-    for c in raw_consumes:
-        if "raw_name" in c and "tuple" in c and len(c["tuple"]) == 2:
-            consumes_mapping[c["raw_name"]] = f"{c['tuple'][0]}.{c['tuple'][1]}"
-            
-    # Chuyển produces thành list string: ["wallet.id", "wallet.status"]
-    produces_list = [f"{p[0]}.{p[1]}" for p in raw_produces if len(p) == 2]
 
-    is_vulnerable = recon_item is not None
-    generated_plans = [] 
-    
+    # ── consumes_mapping: {param_name: semantic_key} ───────────────────────
+    # Hỗ trợ cả format mới (RESTler) lẫn format cũ (DependencyResolver)
+    consumes_mapping: dict = {}
+    for c in raw_consumes:
+        if "param" in c and "semantic_key" in c:
+            # Format mới từ RestlerParser
+            consumes_mapping[c["param"]] = c["semantic_key"]
+        elif "raw_name" in c and "tuple" in c and len(c["tuple"]) == 2:
+            # Format cũ từ DependencyResolver (fallback)
+            consumes_mapping[c["raw_name"]] = f"{c['tuple'][0]}.{c['tuple'][1]}"
+
+    # ── produces_list: ["category.id", "order.id", ...] ───────────────────
+    produces_list: list = []
+    for p in raw_produces:
+        if isinstance(p, dict) and "semantic_key" in p:
+            # Format mới từ RestlerParser
+            produces_list.append(p["semantic_key"])
+        elif isinstance(p, (list, tuple)) and len(p) == 2:
+            # Format cũ
+            produces_list.append(f"{p[0]}.{p[1]}")
+
+    is_vulnerable  = recon_item is not None
+    generated_plans: list = []
+
     endpoint_context = {
-        "node_id": node_id,
-        "path": path,
-        "method": method,
-        "parameters": node_info.get("parameters"),
-        "request_body": node_info.get("request_body"),
+        "node_id":         node_id,
+        "path":            path,
+        "method":          method,
+        "parameters":      node_info.get("parameters"),
+        "request_body":    node_info.get("request_body"),
+        "body_schema":     node_info.get("body_schema", {}),   # RESTler field schema
         "consumes_mapping": consumes_mapping,
-        "produces_list": produces_list
+        "produces_list":   produces_list,
     }
+
 
     if is_vulnerable:
         summary = recon_item.get("summary", {})
         vulns = summary.get("vuln", [])
-        
         if isinstance(vulns, str):
             vulns = [vulns]
             
@@ -107,8 +124,8 @@ def plan_for_endpoint(node_id: str, node_info: dict, recon_item: dict = None) ->
                             RULES:
                         1. DYNAMIC VARIABLES FORMAT: The endpoint consumes variables according to this mapping: {consumes_mapping} (Format is 'parameter_name': 'semantic_variable').
                         - You MUST ALWAYS use DOUBLE BRACES around the 'semantic_variable' for placeholders (e.g., `{{{{user.id}}}}`).
-                        - If the test requires multiple users (e.g., BOLA/IDOR testing), you MUST strictly append `_A` and `_B` to the semantic variable name. 
-                        - EXACT ALLOWED FORMAT: `{{{{wallet.id_A}}}}`, `{{{{wallet.id_B}}}}`, `{{{{login.token_A}}}}`.
+                        - If the test requires multiple users (e.g., BOLA/IDOR testing), you MUST strictly append `_A` and `_B` or `_Admin` (attact role -> _A, victim role -> _B, admin role -> _Admin) to the semantic variable name. This is all user `{users}`
+                        - EXACT ALLOWED FORMAT: `{{{{wallet.id_A}}}}`, `{{{{wallet.id_B}}}}`, `{{{{login.token_A}}}}` and no spaces.
                         - DO NOT invent new naming conventions. Use EXACTLY the semantic variables provided in the mapping.
                         2. HTTP STRUCTURE: Strictly separate your request data into `path_params`, `query_params`, `headers`, and `body`. Do NOT put headers or path parameters inside the `body`.
                         3. Focus strictly on testing the specified vulnerability: {vuln_type}. Reason: {vuln_reasoning}.
@@ -124,6 +141,7 @@ def plan_for_endpoint(node_id: str, node_info: dict, recon_item: dict = None) ->
                 "consumes_mapping": json.dumps(consumes_mapping, ensure_ascii=False),
                 "vuln_type": vuln_type,
                 "vuln_reasoning": vuln_reasoning,
+                "users": users,
                 "endpoint": json.dumps(endpoint_context, ensure_ascii=False),
                 "vuln_info": json.dumps({
                     "vuln_type": vuln_type, 
@@ -161,58 +179,44 @@ def plan_for_endpoint(node_id: str, node_info: dict, recon_item: dict = None) ->
                 logging.error(f"Lỗi khi sinh plan cho {node_id} (Vuln: {vuln_type}): {e}")
 
     else:
-        sys_prompt = """You are an automated API tester. This endpoint is NOT vulnerable, but it MUST be executed to generate prerequisite data ({produces_list}) for subsequent tests.
-                    CRITICAL RULES:
-                    1. Generate exactly ONE test step with a VALID, BENIGN payload that will return a 200/201 success response. Do NOT generate attacks.
-                    2. DYNAMIC VARIABLES: The endpoint needs dynamic variables from previous steps based on this mapping: {consumes_mapping} (Format is 'parameter_name': 'semantic_variable'). 
-                    - You MUST use DOUBLE BRACES around the 'semantic_variable' for placeholders. 
-                    - Example: If the mapping is "walletId": "wallet.id", you MUST write `{{{{wallet.id}}}}` when assigning a value to walletId. DO NOT use single braces.
-                    3. You MUST return the result in valid JSON format matching the schema."""
+        # ── API MồI (SETUP STEP): Build body deterministically từ RESTler schema ──
+        # Không gọi LLM — nhanh hơn và chính xác hơn.
+        body = build_setup_body(node_info)  # None nếu endpoint không có body
+        path_params = build_setup_path_params(node_info)
+        query_params = build_setup_query_params(node_info)
 
-        prompt_messages = [
-            ("system", sys_prompt),
-            ("human", "Endpoint Details: {endpoint}")
-        ]
-
-        input_vars = {
-            "consumes_mapping": json.dumps(consumes_mapping, ensure_ascii=False),
-            "produces_list": json.dumps(produces_list, ensure_ascii=False),
-            "endpoint": json.dumps(endpoint_context, ensure_ascii=False)
-        }
-        print('data', input_vars)
-
-        print(f"> Đang Planning cho: {node_id} (API mồi an toàn)")
-        try:
-            result = LLMService.generate_structured(
-                self=LLMService(),
-                prompt_messages=prompt_messages,
-                input_variables=input_vars,
-                pydantic_schema=TestPlan,
-                fallback_method="function_calling" 
-            )
-
-            if isinstance(result, list):
-                result = result[0] if len(result) > 0 else None
-            if isinstance(result, dict):
-                result = TestPlan(**result)
-                 
-            if result and isinstance(result, TestPlan):
-                result.node_id = node_id
-                result.endpoint = path
-                result.method = method
-                result.vuln_type = "None"
-                result.is_attack = False
-                generated_plans.append(result.model_dump())
-                
-        except Exception as e:
-            logging.error(f"Lỗi khi sinh plan cho {node_id} (API mồi): {e}")
+        result = TestPlan(
+            node_id=node_id,
+            endpoint=path,
+            method=method,
+            vuln_type="None",
+            is_attack=False,
+            max_iterations=1,
+            test_steps=[
+                TestStep(
+                    step=1,
+                    description=(
+                        f"Setup: tạo resource '{path}' bằng {method} "
+                        f"để lấy {produces_list} cho các bước test sau."
+                    ),
+                    path_params=path_params,
+                    query_params=query_params,
+                    headers={},   # execution_agent sẽ inject Authorization
+                    body=body,
+                    expected_indicator="status_code in [200, 201]",
+                )
+            ],
+        )
+        generated_plans.append(result.model_dump())
+        print(f"> Setup plan cho: {node_id} (body: {list(body.keys()) if body else 'none'})")
 
     return generated_plans
 
 def planning_node(state: dict) -> dict:
     audits_list = state.get("filtered_endpoints", [])
     dependency_data = state.get("dependency_graph", {})
-    
+    config = state.get("config", {})
+    users = config.get("users", [])
     execution_order = dependency_data.get("execution_order", [])
     graph_nodes = dependency_data.get("graph", {}).get("nodes", {})
     
@@ -228,6 +232,12 @@ def planning_node(state: dict) -> dict:
             node_id = f"{method}:{path}"
             audit_map[node_id] = item
 
+    _AUTH_MANAGED_PATHS = {
+        "login",
+        "register",
+        "refresh",
+    }
+
     full_test_plan = []
     
     for node_id in execution_order:
@@ -235,7 +245,13 @@ def planning_node(state: dict) -> dict:
         
         recon_item = audit_map.get(node_id)
         
-        plans = plan_for_endpoint(node_id, node_info, recon_item)
+        # Bỏ qua auth endpoints không phải attack target
+        node_path = node_info.get("path", "")
+        if not recon_item and any(keyword in node_path for keyword in _AUTH_MANAGED_PATHS):
+            print(f"> Bỏ qua auth endpoint: {node_id}")
+            continue
+            
+        plans = plan_for_endpoint(node_id, node_info, recon_item, users)
         if plans:
             full_test_plan.extend(plans)
             

@@ -1,6 +1,7 @@
 from langchain_openai import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate
 from pydantic import BaseModel
+from typing import Optional
 from app.core.config import settings
 import json
 import logging
@@ -9,27 +10,34 @@ from tenacity import retry, wait_exponential, stop_after_attempt, retry_if_excep
 logger = logging.getLogger(__name__)
 
 class LLMService:
-    def __init__(self, provider: str = "groq"):
+    def __init__(
+        self,
+        provider: str = "groq",
+        api_key: Optional[str] = None,
+        model: Optional[str] = None,
+        base_url: Optional[str] = None,
+        temperature: float = 0.1,
+    ):
         """
         Khởi tạo service. Bạn có thể truyền provider="openai" hoặc "groq" để linh hoạt.
         """
         self.provider = provider
         
         if provider == "openai":
-            self.api_key = settings.OPENAI_API_KEY # Cần thêm vào settings nếu chưa có
-            self.base_url = None # Dùng URL mặc định của OpenAI
-            self.model = "gpt-4o"
+            self.api_key = api_key or settings.OPENAI_API_KEY
+            self.base_url = base_url
+            self.model = model or "gpt-4o"
         else: # Default là groq
-            self.api_key = settings.GROQ_API_KEY
-            self.base_url = settings.URL_LLM
-            self.model = settings.LARGE_MODEL_NAME
+            self.api_key = api_key or settings.GROQ_API_KEY
+            self.base_url = base_url or settings.URL_LLM
+            self.model = model or settings.LARGE_MODEL_NAME
 
         # Khởi tạo core LLM
         self.llm = ChatOpenAI(
             api_key=self.api_key,
             base_url=self.base_url,
             model=self.model,
-            temperature=0.1
+            temperature=temperature
         )
 
     def generate_json(self, system_prompt: str, user_prompt: str) -> str:
@@ -101,4 +109,4 @@ class LLMService:
 
         except Exception as e:
             logger.error(f"Lỗi khi gọi LLM (generate_structured): {e}")
-            raise
+            raise

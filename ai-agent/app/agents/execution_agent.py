@@ -1,6 +1,8 @@
 import re
+import json
 import httpx
 import logging
+from datetime import datetime
 from typing import Any
 
 # Import các class bạn đã viết
@@ -8,6 +10,8 @@ from app.core.credential_store import CredentialStore
 from app.core.auth_manager import AuthManager
 
 logger = logging.getLogger(__name__)
+
+LOG_FILE_PATH = "outputs/execution_requests.jsonl"
 
 # ══════════════════════════════════════════════════════════════════════
 # VARIABLE STORE - Quản lý Context và Nội suy dữ liệu
@@ -90,6 +94,12 @@ def execution_node(state: dict) -> dict:
     
     logger.info("\n--- CHẠY EXECUTOR NODE ---")
 
+    try:
+        import os
+        os.makedirs("outputs", exist_ok=True)
+    except Exception:
+        pass
+
     # 1. Khởi tạo Auth System
     cred_store = CredentialStore()
     cred_store.load(config)
@@ -100,17 +110,24 @@ def execution_node(state: dict) -> dict:
     
     # 3. Bootstrap Authentication
     # Ép AuthManager lấy token cho tất cả các user và nạp vào VariableStore
-    logger.info(">> Đồng bộ Token vào Context...")
+    logger.info(">>Đồng bộ Token vào Context...")
     for role in cred_store.all_roles():
         try:
             token = auth_manager.get_token(role)
             var_store.set(role, "login.token", token)
-            
+
+            # FIX #4: Inject credentials (email, password) vào var_store
+            # Để {{login.email}} và {{login.password}} resolve được trong body của setup steps
+            cred = cred_store.get(role)
+            if cred:
+                var_store.set(role, "login.email",    cred.email)
+                var_store.set(role, "login.password", cred.password)
+
             # Lấy luôn user_id nếu có
             user_id = auth_manager.get_user_id(role)
             if user_id:
                 var_store.set(role, "user.id", user_id)
-                
+
             logger.info(f"   [+] '{role}': Đã nạp token thành công.")
         except Exception as e:
             logger.error(f"   [-] '{role}': Lỗi Auth - {e}")
@@ -150,13 +167,25 @@ def execution_node(state: dict) -> dict:
                     headers      = var_store.resolve_payload(step.get("headers")      or {}) or {}
                     body         = var_store.resolve_payload(step.get("body"))
                     
-                    # Cứu cánh: Nếu step không định nghĩa header Authorization, lấy từ AuthManager
-                    if "Authorization" not in headers:
+                    # FIX #5: Phát hiện và thay thế Authorization literal/invalid
+                    # Ví dụ: header có "Bearer <User_A_Token>" (chưa resolve) hoặc rỗng
+                    auth_val = headers.get("Authorization", "")
+                    _auth_invalid = (
+                        "Authorization" not in headers   # thiếu hoàn toàn
+                        or not auth_val                  # rỗng
+                        or "<" in auth_val               # literal placeholder: <User_A_Token>
+                        or auth_val.strip() in ("Bearer", "Bearer ")  # thiếu phần token
+                    )
+                    if _auth_invalid:
                         try:
                             auth_headers = auth_manager.get_headers(role)
                             headers.update(auth_headers)
                         except Exception:
-                            pass # Chấp nhận test API public
+                            pass  # Chấp nhận test API public
+
+                    token = var_store.store.get(role, {}).get("login.token")
+                    if token:
+                        headers["Authorization"] = f"Bearer {token}"
                             
                     # Lắp ráp URL
                     url_path = plan.get("endpoint", "")
@@ -165,9 +194,51 @@ def execution_node(state: dict) -> dict:
                         
                     full_url = var_store.base_url + url_path
                     
+                    def redact_payload(value: Any) -> Any:
+                        if isinstance(value, dict):
+                            redacted = {}
+                            for k, v in value.items():
+                                key_lower = str(k).lower()
+                                if any(token in key_lower for token in ("password", "token", "secret", "refresh")):
+                                    redacted[k] = "***"
+                                else:
+                                    redacted[k] = redact_payload(v)
+                            return redacted
+                        if isinstance(value, list):
+                            return [redact_payload(i) for i in value]
+                        return value
+
+                    def redact_headers(hdrs: dict) -> dict:
+                        if not isinstance(hdrs, dict):
+                            return {}
+                        safe = dict(hdrs)
+                        if "Authorization" in safe:
+                            safe["Authorization"] = "Bearer ***"
+                        return redact_payload(safe)
+
+                    def write_request_log(payload: dict) -> None:
+                        try:
+                            with open(LOG_FILE_PATH, "a", encoding="utf-8") as f:
+                                f.write(json.dumps(payload, ensure_ascii=True) + "\n")
+                        except Exception:
+                            pass
+
                     # Gửi Request
                     logger.info(f"[{role}] {method} {full_url}")
                     try:
+                        write_request_log({
+                            "timestamp": datetime.utcnow().isoformat() + "Z",
+                            "node_id": node_id,
+                            "role": role,
+                            "is_attack": is_attack,
+                            "method": method,
+                            "url": full_url,
+                            "path_params": redact_payload(path_params),
+                            "query_params": redact_payload(query_params),
+                            "headers": redact_headers(headers),
+                            "body": redact_payload(body),
+                        })
+
                         response = client.request(
                             method=method,
                             url=full_url,
@@ -181,6 +252,15 @@ def execution_node(state: dict) -> dict:
                             response_json = response.json()
                         except Exception:
                             response_json = {"raw_text": response.text}
+
+                        write_request_log({
+                            "timestamp": datetime.utcnow().isoformat() + "Z",
+                            "node_id": node_id,
+                            "role": role,
+                            "is_attack": is_attack,
+                            "status_code": response.status_code,
+                            "response": redact_payload(response_json),
+                        })
                         
                         # FIX #2: Trích xuất biến nếu là API mồi (setup step)
                         if not is_attack and response.status_code in (200, 201):
@@ -239,6 +319,13 @@ def execution_node(state: dict) -> dict:
                         })
                         
                     except Exception as e:
+                        write_request_log({
+                            "timestamp": datetime.utcnow().isoformat() + "Z",
+                            "node_id": node_id,
+                            "role": role,
+                            "is_attack": is_attack,
+                            "error": str(e),
+                        })
                         logger.error(f"   => Lỗi kết nối HTTP: {e}")
                         
     return {

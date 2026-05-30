@@ -53,10 +53,10 @@ def build_graph(phase: str = "phase2") -> any:
         print("Chạy PHASE: Execution (từ Test Plan có sẵn) ➔ Analyzer")
         # Chỉ add đúng 2 node cần thiết — không có recon/planning
         graph.add_node("execution", execution_node)
-        graph.add_node("analyzer", analyzer_node)
+        # graph.add_node("analyzer", analyzer_node)
         graph.set_entry_point("execution")
-        graph.add_edge("execution", "analyzer")
-        graph.add_edge("analyzer", END)
+        graph.add_edge("execution", END)
+        # graph.add_edge("analyzer", END)
 
     elif phase == "full":
         print("Chạy FULL PIPELINE (Có vòng lặp)")
