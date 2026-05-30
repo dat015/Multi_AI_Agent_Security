@@ -39,7 +39,12 @@ def analyzer_node(state: dict) -> dict:
     
     if not attack_results:
         logger.info("Không có kịch bản tấn công nào để phân tích.")
-        return {**state, "final_report": []}
+        return {
+            **state,
+            "final_report": [],
+            "iteration_count": state.get("iteration_count", 0) + 1,
+            "confidence_score": 1.0,
+        }
 
     final_reports = []
 
@@ -74,7 +79,7 @@ def analyzer_node(state: dict) -> dict:
         try:
             # Gọi LLM Service
             assessment = LLMService.generate_structured(
-                self=LLMService(),
+                self=LLMService(model=settings.GPT_OOS_20B),
                 prompt_messages=prompt_messages,
                 input_variables={},
                 pydantic_schema=VulnerabilityAssessment,

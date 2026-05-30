@@ -198,6 +198,7 @@ CONFIG_TEMPLATE = {
         "login_endpoint":   "/identity/api/auth/login",
         "refresh_endpoint": "/identity/api/auth/refresh"
     },
+  "restler_compile_path": "Compile",
     "users": [
         {
             "role":     "admin",
@@ -230,6 +231,7 @@ AUTH_CONFIG_SCHEMA = {
             "type": "object",
             "required": ["base_url"],
             "additionalProperties": False,
+            
             "properties": {
                 "base_url": {
                     "type":    "string",
@@ -272,8 +274,8 @@ AUTH_CONFIG_SCHEMA = {
                     },
                     "password": {
                         "type":      "string",
-                        "minLength": 6,
-                        "description": "Mật khẩu (tối thiểu 6 ký tự)"
+                      "minLength": 5,
+                      "description": "Mật khẩu (tối thiểu 5 ký tự)"
                     },
                     "token": {
                         "type":        "string",
@@ -293,7 +295,13 @@ AUTH_CONFIG_SCHEMA = {
                     }
                 }
             }
-        }
+          },
+
+          "restler_compile_path": {
+            "type": "string",
+            "default": "Compile",
+            "description": "Path to RESTler Compile output directory"
+          }
     }
 }
 
@@ -334,7 +342,7 @@ Always evaluate:
 - whether the malicious payload actually succeeded
 
 HTTP 200 DOES NOT automatically mean vulnerable.
-HTTP 403/401 DOES NOT automatically mean safe.
+HTTP 403/401/500 DOES NOT automatically mean safe (unless it securely handled the request without data leaks).
 
 3. COMPARE EXPECTED VS ATTACK BEHAVIOR
 If baseline behavior or expected behavior is available,
@@ -355,22 +363,17 @@ Only use evidence explicitly present in:
 - known endpoint behavior
 
 If evidence is insufficient:
-return INCONCLUSIVE.
+confidence score should be low.
 
 =====================================================
-VERDICT DEFINITIONS
+VERDICT DEFINITIONS (is_vulnerable)
 =====================================================
 
-Return ONLY one verdict:
-
-- VULNERABLE
+- True (VULNERABLE)
   Clear evidence that the exploit succeeded.
 
-- SAFE
-  Clear evidence the system blocked or safely handled the attack.
-
-- INCONCLUSIVE
-  Insufficient evidence to prove success or failure.
+- False (SAFE / INCONCLUSIVE)
+  Clear evidence the system blocked or safely handled the attack, OR insufficient evidence to prove success.
 
 =====================================================
 OWASP API SECURITY TOP 10 (2023)
@@ -447,7 +450,7 @@ SAFE IF:
 - fields ignored
 - fields stripped
 - validation blocks request
-- HTTP 400/403
+- HTTP 400/403/500 (if it's a DB constraint violation that prevents the change)
 
 -----------------------------------------------------
 
@@ -608,38 +611,12 @@ SAFE IF:
 - sanitization present
 
 =====================================================
-RESPONSE FORMAT
+CRITICAL OUTPUT INSTRUCTIONS
 =====================================================
 
-Return ONLY valid JSON.
-
-Schema:
-
-{
-  "owasp_category": "API1:2023 - BOLA",
-  "verdict": "VULNERABLE | SAFE | INCONCLUSIVE",
-  "confidence": 0.0,
-  "reasoning": "Short technical explanation",
-  "evidence": {
-    "status_code": 200,
-    "relevant_fields": [],
-    "sensitive_data_exposed": [],
-    "behavior_change": "",
-    "authorization_outcome": ""
-  },
-  "impact": "What attacker achieved",
-  "recommendation": "Short mitigation advice"
-}
-
-=====================================================
-FINAL RULES
-=====================================================
-
-- Never invent missing evidence.
-- Never infer exploitation without proof.
-- Never classify VULNERABLE based only on HTTP 200.
-- Prefer INCONCLUSIVE over guessing.
-- Quote exact response fields whenever possible.
-- Be concise, technical, and deterministic.
-- Output JSON only.
+1. You MUST invoke the provided structured tool/function to submit your VulnerabilityAssessment.
+2. DO NOT output raw JSON text or markdown blocks (e.g., ```json ... ```).
+3. DO NOT invent or call a tool named 'json'. Only use the tool structure natively provided to you by the LangChain framework.
+4. Your 'confidence_score' must be an integer between 1 and 100.
+5. Provide a detailed 'reasoning' based strictly on the provided response evidence.
 """
