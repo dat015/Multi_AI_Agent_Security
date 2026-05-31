@@ -1,5 +1,5 @@
-from openai import OpenAI
-from app.core.config import settings
+import logging
+from app.core.config import settings, get_groq_keys
 from app.core.constants import AGENT_SYSTEM_PROMPT
 import json
 import os
@@ -11,12 +11,13 @@ from app.core.constants import SWAGGER_DEFAULT_PATH
 from app.modules.parser.swagger_extractor import SwaggerExtractor
 from app.helper.markdown_chunker import chunk_endpoints_to_markdown
 from app.helper.file_saved import save_json_file, save_markdown_file
+from app.services.llm_service import LLMService
+from app.services.llm_scheduler import LLMTaskScheduler
+
+logger = logging.getLogger(__name__)
 class ReconAgent:
-    def __init__(self):
-        self.client = OpenAI(
-            base_url=settings.URL_LLM,
-            api_key=settings.GROQ_API_KEY 
-        )
+    def __init__(self, api_key: str):
+        self.api_key = api_key
         self.expert_model = settings.GPT_OOS_20B
 
     def load_kb(self):
@@ -40,27 +41,12 @@ class ReconAgent:
     
     def ask(self, system_prompt: str, user_content: str, model: str):
         try:
-            response = self.client.chat.completions.create(
+            service = LLMService(
+                api_key=self.api_key,
                 model=model,
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_content}
-                ],
-                response_format={ "type": "json_object" } 
+                base_url=settings.URL_LLM,
             )
-            usage = response.usage
-
-            prompt_tokens = usage.prompt_tokens
-            completion_tokens = usage.completion_tokens
-            total_tokens = usage.total_tokens
-
-            print("\n===== TOKEN USAGE =====")
-            print(f"Input Tokens     : {prompt_tokens}")
-            print(f"Output Tokens    : {completion_tokens}")
-            print(f"Total Tokens     : {total_tokens}")
-            print("=======================\n")
-
-            return response.choices[0].message.content
+            return service.generate_json(system_prompt, user_content)
 
         except Exception as e:
             return f"Lỗi Groq: {str(e)}"
@@ -77,15 +63,45 @@ def recon_node(state):
     potential_threats = SecurityAnalyzer.analyze(parsed_data.endpoints)
 
     markdown_chunks = chunk_endpoints_to_markdown(potential_threats, chunk_size=10)
-    
 
-    agent = ReconAgent()
+    api_keys = get_groq_keys(settings.LLM_PARALLEL_KEYS)
+    scheduler = LLMTaskScheduler(
+        api_keys=api_keys,
+        concurrency_per_key=settings.LLM_CONCURRENCY_PER_KEY,
+        logger=logger,
+    )
     aggregated_scenarios = [] 
+
+    tasks = []
+    for chunk in markdown_chunks:
+        user_content = (
+            f"Here are the target API endpoints formatted in Markdown:\n\n"
+            f"{chunk['page_content']}\n\n"
+            f"Analyze these targets and evaluate them strictly according to the System Prompt instructions. "
+            f"Remember: Output MUST be a JSON object with the root key 'audits'."
+        )
+
+        def _make_task(content: str):
+            def _task(api_key: str, key_index: int):
+                agent = ReconAgent(api_key=api_key)
+                return agent.ask(
+                    system_prompt=AGENT_SYSTEM_PROMPT,
+                    user_content=content,
+                    model=settings.GPT_OOS_20B,
+                )
+
+            return _task
+
+        tasks.append(_make_task(user_content))
+
+    results, errors = scheduler.map(tasks, fail_soft=True)
 
     for i, chunk in enumerate(markdown_chunks):
         print(f"> Đang Audit Chunk {i+1}/{len(markdown_chunks)}...")
-        
-        result_str = agent.audit(normalized_data=chunk["page_content"])
+        result_str = results[i]
+        if errors[i] is not None or not result_str:
+            logger.warning("Chunk %s failed or empty result.", i + 1)
+            continue
         
         try:
             parsed_json = json.loads(result_str)

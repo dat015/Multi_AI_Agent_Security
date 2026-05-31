@@ -34,7 +34,7 @@ logger = logging.getLogger(__name__)
 # ──────────────────────────────────────────────
 DEFAULT_CONFIG_PATH    = "app/input/config_template.json"
 DEFAULT_TEST_PLAN_PATH = "outputs/test_plan.json"
-OUTPUT_REPORT_PATH     = "outputs/exec_only_report.json"
+OUTPUT_REPORT_PATH     = "outputs/exec_only_report1.json"
 
 
 def load_config(path: str) -> dict:
