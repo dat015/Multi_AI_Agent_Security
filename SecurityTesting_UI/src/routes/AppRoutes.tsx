@@ -1,23 +1,13 @@
-import {
-  Route,
-  Routes,
-} from 'react-router-dom';
-import { NotFoundPage } from '../features/notFound/pages/NotFoundPage';
-import { SecurityTesterPage } from '../features/security/pages/SecurityTesterPage';
-
+import { Route, Routes } from "react-router-dom";
+import { NotFoundPage } from "../features/notFound/pages/NotFoundPage";
+import SecurityTesterPage from "../features/security/pages/Page";
 
 export function AppRoutes() {
   return (
     <Routes>
-      <Route
-        path="/"
-        element={<SecurityTesterPage />}
-      />
+      <Route path="/" element={<SecurityTesterPage />} />
 
-      <Route
-        path="*"
-        element={<NotFoundPage />}
-      />
+      <Route path="*" element={<NotFoundPage />} />
     </Routes>
   );
 }
