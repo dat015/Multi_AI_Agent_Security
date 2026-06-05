@@ -20,8 +20,14 @@ from typing import Union
 class TestStep(BaseModel):
     step: int
     description: str
-    path_params: Optional[Dict[str, str]] = Field(default_factory=dict, description="Các biến trên URL path, VD: {'walletId': '{{wallet.id}}'}")
-    query_params: Optional[Dict[str, str]] = Field(default_factory=dict, description="Các tham số sau dấu ?, VD: {'limit': '10'}")
+    path_params: Optional[Dict[str, Union[str, int]]] = Field(
+        default_factory=dict,
+        description="Các biến trên URL path, có thể là string hoặc số"
+    )
+    query_params: Optional[Dict[str, Union[str, int]]] = Field(
+        default_factory=dict,
+        description="Các tham số sau dấu ?, có thể là string hoặc số"
+    )
     headers: Optional[Dict[str, str]] = Field(default_factory=dict, description="HTTP Headers, bắt buộc chứa Authorization token nếu cần")
     body: Optional[Union[Dict[str, Any], str]] = Field(default=None, description="HTTP Request Body (JSON hoặc Text)")
     expected_indicator: str
@@ -73,6 +79,17 @@ def load_owasp_kb(owasp_id: str) -> dict:
         print(f"Lỗi khi đọc file owasp_kb.json: {e}")
         return {}
 
+def simplify_consume_mapping(consumes_mapping: dict) -> str:
+    if not consumes_mapping:
+        return "No dynamic parameters."
+    lines = ["Available placeholders:"]
+    for param, info in consumes_mapping.items():
+        loc = info.get("location", "unknown")
+        placeholders = info.get("allowed_placeholders", [])
+        if placeholders:
+            lines.append(f"  - Parameter '{param}' (in {loc}): use {placeholders[0]} (user A) or {placeholders[1]} (user B)")
+    return "\n".join(lines)
+
 def _build_endpoint_context(node_id: str, node_info: dict) -> tuple[dict, dict, list, str, str]:
     path = node_info.get("path")
     method = node_info.get("method")
@@ -80,13 +97,29 @@ def _build_endpoint_context(node_id: str, node_info: dict) -> tuple[dict, dict, 
     raw_consumes = node_info.get("consumes", [])
     raw_produces = node_info.get("produces", [])
 
-    # ── consumes_mapping: {param_name: semantic_key} ───────────────────────
-    # Hỗ trợ cả format mới (RESTler) lẫn format cũ (DependencyResolver)
     consumes_mapping: dict = {}
     for c in raw_consumes:
         if "param" in c and "semantic_key" in c:
             # Format mới từ RestlerParser
-            consumes_mapping[c["param"]] = c["semantic_key"]
+            consumes_mapping[c["param"]] = {
+                "semantic_key": c["semantic_key"],
+                "variable_name": c.get("variable_name"),
+                "location": c.get("location"),
+                "producer_endpoint": c.get("producer_endpoint"),
+                "producer_method": c.get("producer_method"),
+                "allowed_placeholders": [
+                    "{{" + c['semantic_key'] + "_A}}",
+                    "{{" + c['semantic_key'] + "_B}}",
+                ],
+                "examples": {
+                    "valid_A":
+                        f"{{{{{c['semantic_key']}_A}}}}",
+                    "valid_B":
+                        f"{{{{{c['semantic_key']}_B}}}}",
+                    "invalid":
+                        "12345"
+                }
+            }
         elif "raw_name" in c and "tuple" in c and len(c["tuple"]) == 2:
             # Format cũ từ DependencyResolver (fallback)
             consumes_mapping[c["raw_name"]] = f"{c['tuple'][0]}.{c['tuple'][1]}"
@@ -105,11 +138,27 @@ def _build_endpoint_context(node_id: str, node_info: dict) -> tuple[dict, dict, 
         "node_id": node_id,
         "path": path,
         "method": method,
-        "parameters": node_info.get("parameters"),
-        "request_body": node_info.get("request_body"),
-        "body_schema": node_info.get("body_schema", {}),
-        "consumes_mapping": consumes_mapping,
-        "produces_list": produces_list,
+
+        # Raw OpenAPI info
+        "parameters": node_info.get("parameters", []),
+        "request_body": node_info.get("request_body", {}),
+
+        # Explicit schemas
+        "path_schema":
+            node_info.get("path_schema", {}),
+
+        "query_schema":
+            node_info.get("query_schema", {}),
+
+        "body_schema":
+            node_info.get("body_schema", {}),
+
+        # Dependency graph
+        "consumes_mapping":
+            consumes_mapping,
+
+        "produces_list":
+            produces_list,
     }
 
     return endpoint_context, consumes_mapping, produces_list, path, method
@@ -195,15 +244,18 @@ def build_plan_jobs_for_endpoint(
 
         sys_prompt = """You are a professional security tester. Based on the endpoint information and the OWASP KB, generate a detailed security testing plan.
                         RULES:
-                    1. DYNAMIC VARIABLES FORMAT: The endpoint consumes variables according to this mapping: {consumes_mapping} (Format is 'parameter_name': 'semantic_variable').
-                    - You MUST ALWAYS use DOUBLE BRACES around the 'semantic_variable' for placeholders (e.g., `{{{{user.id}}}}`).
-                    - If the test requires multiple users (e.g., BOLA/IDOR testing), you MUST strictly append `_A` and `_B` or `_Admin` (attact role -> _A, victim role -> _B, admin role -> _Admin) to the semantic variable name. This is all user `{users}`
-                    - EXACT ALLOWED FORMAT: `{{{{wallet.id_A}}}}`, `{{{{wallet.id_B}}}}`, `{{{{login.token_A}}}}` and no spaces.
-                    - DO NOT invent new naming conventions. Use EXACTLY the semantic variables provided in the mapping.
+                    1. - DYNAMIC VARIABLES FORMAT: The endpoint consumes the following parameters and their corresponding semantic variables (from consumes_mapping): {consumes_mapping}.
+                        - You MUST use ONLY the semantic variable names provided in this mapping.
+                        - ALWAYS use DOUBLE BRACES around the semantic variable, e.g., `{{{{category.id_A}}}}`, `{{{{order.id_B}}}}`, `{{{{login.token_A}}}}`.
+                        - DO NOT invent variable names like 'wallet.id' unless they appear in the mapping.
                     2. HTTP STRUCTURE: Strictly separate your request data into `path_params`, `query_params`, `headers`, and `body`. Do NOT put headers or path parameters inside the `body`.
                     3. Focus strictly on testing the specified vulnerability: {vuln_type}. Reason: {vuln_reasoning}.
                     4. STRICT JSON COMPLIANCE: Valid JSON only. Do not use JS functions like .repeat() or concatenation. Use string placeholders like "[LARGE_PAYLOAD]" if needed.
                     5. Limit to a maximum of 3 highly effective test steps.
+                    6.AUTHENTICATION RULES:
+                        ONLY use:
+                        {{auth.token_A}}
+                        {{auth.token_B}}
                     """
         prompt_messages = [
             ("system", sys_prompt),
@@ -211,7 +263,7 @@ def build_plan_jobs_for_endpoint(
         ]
 
         input_vars = {
-            "consumes_mapping": json.dumps(consumes_mapping, ensure_ascii=False),
+            "consumes_mapping": simplify_consume_mapping(consumes_mapping),
             "vuln_type": vuln_type,
             "vuln_reasoning": vuln_reasoning,
             "users": users,
@@ -251,11 +303,12 @@ def planning_node(state: dict) -> dict:
     graph_nodes = dependency_data.get("graph", {}).get("nodes", {})
     
     print(f"\n--- CHẠY PLANNING NODE ---")
-    print(f"Tổng số API cần lên kịch bản (kể cả API mồi): {len(execution_order)}")
+    print(f"Tổng số API cần lên kịch bản: {len(execution_order)}")
     
-    # Map các audits theo node_id để dễ truy xuất
     audit_map = {}
     for item in audits_list:
+        if not isinstance(item, dict):
+            continue
         method = item.get("summary", {}).get("method", "").upper()
         path = item.get("summary", {}).get("path", "")
         if method and path:
@@ -314,17 +367,70 @@ def planning_node(state: dict) -> dict:
         for job in llm_jobs:
             def _make_task(job_payload: dict):
                 def _task(api_key: str, key_index: int):
+                    debug_dir = "outputs"
+                    os.makedirs(debug_dir, exist_ok=True)
+
+                    debug_file = os.path.join(
+                        debug_dir,
+                        "llm_debug.log"
+                    )
+
+                    log_data = {
+                        "node_id":
+                            job_payload.get("node_id"),
+
+                        "endpoint":
+                            job_payload.get("endpoint"),
+
+                        "method":
+                            job_payload.get("method"),
+
+                        "vuln_type":
+                            job_payload.get("vuln_type"),
+
+                        "prompt_messages":
+                            job_payload["prompt_messages"],
+
+                        "input_variables":
+                            job_payload["input_vars"]
+                    }
+
+                    with open(
+                        debug_file,
+                        "a",
+                        encoding="utf-8"
+                    ) as f:
+
+                        f.write("\n")
+                        f.write("=" * 100)
+                        f.write("\n")
+
+                        json.dump(
+                            log_data,
+                            f,
+                            indent=2,
+                            ensure_ascii=False
+                        )
+
+                        f.write("\n")
+
+                    print(
+                        f"[DEBUG] Logged LLM payload "
+                        f"to {debug_file}"
+                    )
                     service = LLMService(
                         api_key=api_key,
                         model=settings.LARGE_MODEL_NAME,
                         base_url=settings.URL_LLM,
                     )
+
                     return service.generate_structured(
                         prompt_messages=job_payload["prompt_messages"],
                         input_variables=job_payload["input_vars"],
                         pydantic_schema=TestPlan,
                         fallback_method="function_calling",
                     )
+                    
 
                 return _task
 

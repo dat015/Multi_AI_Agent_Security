@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 class ReconAgent:
     def __init__(self, api_key: str):
         self.api_key = api_key
-        self.expert_model = settings.GPT_OOS_20B
+        self.expert_model = settings.LARGE_MODEL_NAME
 
     def load_kb(self):
         kb_path = Path(__file__).resolve().parent.parent.parent / "knowledge" / "owasp_kb.json"
@@ -62,7 +62,7 @@ def recon_node(state):
     parsed_data = SwaggerExtractor.extract(spec)
     potential_threats = SecurityAnalyzer.analyze(parsed_data.endpoints)
 
-    markdown_chunks = chunk_endpoints_to_markdown(potential_threats, chunk_size=10)
+    markdown_chunks = chunk_endpoints_to_markdown(potential_threats, chunk_size=5)
 
     api_keys = get_groq_keys(settings.LLM_PARALLEL_KEYS)
     scheduler = LLMTaskScheduler(
@@ -106,14 +106,26 @@ def recon_node(state):
         try:
             parsed_json = json.loads(result_str)
             
+            # Lấy mảng audits
             scenarios = parsed_json.get("audits", [])
-            if scenarios:
-                aggregated_scenarios.extend(scenarios)
+            valid_scenarios = []
+            if isinstance(scenarios, list):
+                valid_scenarios = [s for s in scenarios if isinstance(s, dict)]
+
+            if valid_scenarios:
+                aggregated_scenarios.extend(valid_scenarios)
             else:
+                # Fallback: tìm list đầu tiên trong các giá trị của parsed_json
+                found = False
                 for key, val in parsed_json.items():
                     if isinstance(val, list):
-                        aggregated_scenarios.extend(val)
-                        break
+                        valid_val = [v for v in val if isinstance(v, dict)]
+                        if valid_val:
+                            aggregated_scenarios.extend(valid_val)
+                            found = True
+                            break
+                if not found:
+                    logger.warning("Chunk %s has no valid audit list.", i+1)
 
         except json.JSONDecodeError:
             print(f"Lỗi parse JSON ở Chunk {i+1}. Raw output: {result_str}")
@@ -128,7 +140,6 @@ def recon_node(state):
 
     try:
         dependency_data = build_dependency_graph_from_restler(grammar_path, deps_path)
-        print(f"[RestlerParser] OK: {dependency_data['stats']['total_nodes']} nodes")
     except FileNotFoundError as e:
         print(f"[RestlerParser] Cảnh báo: Không tìm thấy file RESTler ({e}). Dùng graph rỗng.")
         dependency_data = {

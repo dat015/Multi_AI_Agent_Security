@@ -169,21 +169,16 @@ def get_default_for_field(field_name: str, type_str: str, restler_default: str |
 # GRAMMAR.JSON PARSERS
 # ══════════════════════════════════════════════════════════════════════
 
-def _extract_fuzzable_fields(data: Any, result: dict, prefix: str = "") -> None:
+def _extract_fuzzable_fields(data: Any, result: dict, prefix: str = "", passed_name: str = "") -> None:
     """
-    Duyệt đệ quy cấu trúc bodyParameters/queryParameters để lấy:
-      - Fuzzable fields: {name: {type, default}}
-      - DynamicObject fields: {name: {type, variable_name, is_dynamic: True}}
-
-    Xử lý:
-      - LeafNode → leaf field trực tiếp
-      - InternalNode → nested object, đệ quy xuống children
-      - list/dict → tiếp tục duyệt
+    Duyệt đệ quy cấu trúc bodyParameters/queryParameters.
+    Cải tiến: Hỗ trợ truyền passed_name từ scope ngoài vào cho các LeafNode bị ẩn tên (như trong Query).
     """
     if isinstance(data, dict):
         if "LeafNode" in data:
             leaf = data["LeafNode"]
-            name = leaf.get("name", "")
+            # Lấy tên từ leaf, nếu rỗng thì dùng passed_name truyền từ bên ngoài vào
+            name = leaf.get("name", "") or passed_name
             if not name:
                 return
             full_name = f"{prefix}.{name}" if prefix else name
@@ -203,15 +198,12 @@ def _extract_fuzzable_fields(data: Any, result: dict, prefix: str = "") -> None:
                     "variable_name": dyn.get("variableName", ""),
                     "is_dynamic":    True,
                 }
-            # Nếu là Constant hoặc kiểu khác → bỏ qua (không cần test)
 
         elif "InternalNode" in data:
-            # InternalNode = [metadata_dict, [children_list]]
             internal = data["InternalNode"]
             if isinstance(internal, list) and len(internal) == 2:
                 meta, children = internal
                 node_name = meta.get("name", "")
-                # Nếu meta.name rỗng (root object), không thêm prefix
                 if node_name:
                     new_prefix = f"{prefix}.{node_name}" if prefix else node_name
                 else:
@@ -220,13 +212,17 @@ def _extract_fuzzable_fields(data: Any, result: dict, prefix: str = "") -> None:
                     for child in children:
                         _extract_fuzzable_fields(child, result, new_prefix)
         else:
-            # Dict thông thường → duyệt values
+            # RESTler format cho Query params: { "name": "customerId", "payload": { "LeafNode": ... } }
+            # Ta lấy "name" lưu vào biến current_name để truyền chìm xuống level con
+            current_name = data.get("name", passed_name) if isinstance(data.get("name"), str) else passed_name
+            
+            # Duyệt tiếp các values bên trong
             for val in data.values():
-                _extract_fuzzable_fields(val, result, prefix)
+                _extract_fuzzable_fields(val, result, prefix, current_name)
 
     elif isinstance(data, list):
         for item in data:
-            _extract_fuzzable_fields(item, result, prefix)
+            _extract_fuzzable_fields(item, result, prefix, passed_name)
 
 
 def parse_body_schema(body_parameters: list) -> dict:
@@ -380,6 +376,36 @@ def _topo_sort(node_ids: list[str], node_dependencies: dict[str, list[str]]) -> 
 
     return result
 
+def build_resource_producer_map_from_grammar(grammar: dict) -> dict:
+    """
+    Trả về: {
+        "order": {
+            "node_id": "POST:/Order",
+            "variable_name": "_Order_post_id",
+            "semantic_key": "order.id"
+        },
+        "category": {...}
+    }
+    """
+    mapping = {}
+    requests = grammar.get("Requests", [])
+    for req in requests:
+        method = req["id"]["method"].upper()
+        if method != "POST":
+            continue
+        endpoint = req["id"]["endpoint"]
+        node_id = f"{method}:{endpoint}"
+        writer_vars = parse_writer_vars(req.get("dependencyData", {}))
+        for wv in writer_vars:
+            sem_key = wv.get("semantic_key", "")
+            if "." in sem_key:
+                resource = sem_key.split(".")[0]   # "order.id" → "order"
+                mapping[resource] = {
+                    "node_id": node_id,
+                    "variable_name": wv["variable_name"],
+                    "semantic_key": sem_key,
+                }
+    return mapping
 
 # ══════════════════════════════════════════════════════════════════════
 # MAIN ENTRY POINT
@@ -443,9 +469,10 @@ def build_dependency_graph_from_restler(grammar_path: str, deps_path: str) -> di
     # ── Load files ──────────────────────────────────────────────────
     logger.info(f"[RestlerParser] Đọc grammar: {grammar_path}")
     logger.info(f"[RestlerParser] Đọc deps:    {deps_path}")
-
+    
     with open(grammar_path, "r", encoding="utf-8") as f:
         grammar = json.load(f)
+    resource_producer_map = build_resource_producer_map_from_grammar(grammar)   
     with open(deps_path, "r", encoding="utf-8") as f:
         deps = json.load(f)
 
@@ -485,7 +512,25 @@ def build_dependency_graph_from_restler(grammar_path: str, deps_path: str) -> di
                         fdata.get("default"),
                     ),
                 }
-
+        raw_query = parse_body_schema(req.get("queryParameters", []))
+        query_schema: dict = {}
+        for fname, fdata in raw_query.items():
+            if fdata.get("is_dynamic"):
+                query_schema[fname] = {
+                    "type":          fdata["type"],
+                    "default":       None,
+                    "variable_name": fdata.get("variable_name", ""),
+                    "is_dynamic":    True,
+                }
+            else:
+                query_schema[fname] = {
+                    "type":    fdata["type"],
+                    "default": get_default_for_field(
+                        fname,
+                        fdata["type"],
+                        fdata.get("default"),
+                    ),
+                }
         # ── 3. Path dynamic vars ───────────────────────────────────
         path_dynamic = parse_path_dynamic_vars(req.get("path", []))
 
@@ -535,12 +580,60 @@ def build_dependency_graph_from_restler(grammar_path: str, deps_path: str) -> di
                               dep.get("producer_method", ""))
             if c:
                 consumes.append(c)
+        for c in consumes:
+            if c["location"] == "Query" and c.get("param"):
+                param_name = c["param"]
+                # Cập nhật thêm thuộc tính dynamic mà không làm mất 'type' đã parse
+                if param_name in query_schema:
+                    query_schema[param_name].update({
+                        "variable_name": c.get("variable_name", ""),
+                        "semantic_key":  c.get("semantic_key", ""),
+                        "is_dynamic":    True
+                    })
 
-        # Cross-check với DynamicObject trong path
-        # (đảm bảo không bỏ sót khi dependencies.json thiếu)
+        # ── 6. Suy luận Heuristic cho cả Body và Query ────────────────
+        schemas_to_check = [
+            ("Body", body_schema),
+            ("Query", query_schema)
+        ]
+
+        for location, schema in schemas_to_check:
+            for fname in schema.keys():
+                normalized = fname.lower().replace("_", "").replace("-", "")
+
+                if normalized.endswith("id") and normalized != "id":
+                    resource = normalized[:-2]
+
+                    if resource in resource_producer_map:
+                        prod = resource_producer_map[resource]
+
+                        # Kiểm tra xem đã có trong consumes chưa
+                        if not any(
+                            c.get("param") == fname and c.get("location") == location
+                            for c in consumes
+                        ):
+                            consumes.append({
+                                "location":          location,
+                                "param":             fname,
+                                "variable_name":     prod["variable_name"],
+                                "semantic_key":      prod["semantic_key"],
+                                "producer_endpoint": prod["node_id"].split(":", 1)[1],
+                                "producer_method":   prod["node_id"].split(":", 1)[0],
+                            })
+                            
+                            # Cập nhật ngược lại schema để biến này thành biến động
+                            schema[fname].update({
+                                "is_dynamic":    True,
+                                "variable_name": prod["variable_name"],
+                                "semantic_key":  prod["semantic_key"],
+                                "default":       None
+                            })
+
+        # Tập hợp các path param đã có consumer từ dependencies.json
         existing_path_params = {c["param"] for c in consumes if c["location"] == "Path"}
         url_path_params = re.findall(r"\{(\w+)\}", endpoint)
 
+        # 1. Xử lý các path dynamic có sẵn (RESTler đã phát hiện DynamicObject)
         for pdv in path_dynamic:
             for pp in url_path_params:
                 if pp not in existing_path_params:
@@ -549,44 +642,93 @@ def build_dependency_graph_from_restler(grammar_path: str, deps_path: str) -> di
                         "param":             pp,
                         "variable_name":     pdv["variable_name"],
                         "semantic_key":      pdv["semantic_key"],
-                        "producer_endpoint": "",
+                        "producer_endpoint": "",   # để trống, sẽ suy luận sau nếu có
                         "producer_method":   "",
                     })
                     existing_path_params.add(pp)
 
-        # ── 6. Path schema (dành cho execution_agent) ──────────────
-        path_schema: dict = {}
-        for pdv in path_dynamic:
-            for pp in url_path_params:
-                path_schema[pp] = {
-                    "type":          pdv["type"],
-                    "variable_name": pdv["variable_name"],
-                    "semantic_key":  pdv["semantic_key"],
+        # 2. Suy luận producer cho các path param còn thiếu dựa vào resource_producer_map
+        for pp in url_path_params:
+            if pp in existing_path_params:
+                continue
+            # Xác định resource name từ tên param hoặc endpoint context
+            resource = None
+            if pp.endswith("Id") or pp.endswith("id"):
+                # "orderId" -> "order", "productId" -> "product"
+                resource = re.sub(r"(Id|id)$", "", pp).lower()
+            elif pp == "id":
+                # Lấy resource từ endpoint: /Category/{id} -> category
+                parts = endpoint.split("/")
+                for i, part in enumerate(parts):
+                    if part == "{id}" and i > 0:
+                        resource = parts[i-1].lower()
+                        break
+            if resource and resource in resource_producer_map:
+                prod = resource_producer_map[resource]
+                # Tìm consumer đã tồn tại cho param này (có thể đã thêm từ bước 1)
+                # Nếu chưa có, tạo mới; nếu có rồi thì cập nhật producer
+                found = next((c for c in consumes if c.get("param") == pp and c.get("location") == "Path"), None)
+                if found:
+                    found["producer_endpoint"] = prod["node_id"].split(":", 1)[1]
+                    found["producer_method"]   = prod["node_id"].split(":", 1)[0]
+                    found["variable_name"]     = prod["variable_name"]
+                    found["semantic_key"]      = prod["semantic_key"]
+                else:
+                    consumes.append({
+                        "location":          "Path",
+                        "param":             pp,
+                        "variable_name":     prod["variable_name"],
+                        "semantic_key":      prod["semantic_key"],
+                        "producer_endpoint": prod["node_id"].split(":", 1)[1],
+                        "producer_method":   prod["node_id"].split(":", 1)[0],
+                    })
+                existing_path_params.add(pp)
+            else:
+                # Không tìm thấy producer -> thêm consumer trống (sẽ bỏ qua ở topo)
+                if not any(c.get("param") == pp for c in consumes):
+                    consumes.append({
+                        "location":          "Path",
+                        "param":             pp,
+                        "variable_name":     "",
+                        "semantic_key":      "",
+                        "producer_endpoint": "",
+                        "producer_method":   "",
+                    })
+                    logger.warning(f"[RestlerParser] Cannot infer producer for path param '{pp}' in {endpoint}")
+        
+        # 3. Xây dựng path_schema dựa trên consumes (thay vì chỉ dùng path_dynamic)
+        path_schema = {}
+        for c in consumes:
+            if c["location"] == "Path" and c.get("param"):
+                param = c["param"]
+                # Lấy type từ path_dynamic nếu có, mặc định Int
+                ptype = "Int"
+                for pdv in path_dynamic:
+                    if pdv.get("semantic_key") == c.get("semantic_key"):
+                        ptype = pdv.get("type", "Int")
+                        break
+                path_schema[param] = {
+                    "type":          ptype,
+                    "variable_name": c.get("variable_name", ""),
+                    "semantic_key":  c.get("semantic_key", ""),
                 }
 
         # ── 7. Lưu node ───────────────────────────────────────────
         nodes[node_id] = {
-            "node_id":     node_id,
-            "method":      method,
-            "path":        endpoint,
-            "body_schema": body_schema,
-            "path_schema": path_schema,
-            "query_schema": {},
-            "consumes":    consumes,
-            "produces":    writer_vars,
-            # Legacy fields (dùng cho planning_agent prompt context)
-            "parameters":    [],
-            "request_body":  {},
-            "tags":          [],
-            "summary":       "",
-        }
-
-        logger.debug(
-            f"[RestlerParser] {node_id}: "
-            f"body={len(body_schema)} fields, "
-            f"consumes={len(consumes)}, "
-            f"produces={len(writer_vars)}"
-        )
+                    "node_id":     node_id,
+                    "method":      method,
+                    "path":        endpoint,
+                    "body_schema": body_schema,
+                    "path_schema": path_schema,
+                    "query_schema": query_schema,
+                    "consumes":    consumes,
+                    "produces":    writer_vars,
+                    # Legacy fields (dùng cho planning_agent prompt context)
+                    "parameters":    [],
+                    "request_body":  {},
+                    "tags":          [],
+                    "summary":       "",
+                }
 
     # ── 8. Compute execution_order from dependencies (topo-sort) ──
     # Build: consumer_node_id -> [producer_node_ids]
@@ -655,12 +797,12 @@ def build_setup_body(node_info: dict) -> dict | None:
         if fname in dynamic_by_param:
             # Field này cần ID từ endpoint khác → dùng template
             sem_key = dynamic_by_param[fname]
-            body[fname] = f"{{{{ {sem_key} }}}}"
+            body[fname] = f"{{{{{sem_key}}}}}"
 
         elif schema.get("is_dynamic") and schema.get("variable_name"):
             # Field có DynamicObject payload (referenced từ grammar.json)
             sem_key = variable_name_to_semantic_key(schema["variable_name"])
-            body[fname] = f"{{{{ {sem_key} }}}}"
+            body[fname] = f"{{{{{sem_key}}}}}"
 
         else:
             # Field tĩnh → dùng default value từ RESTler / FIELD_NAME_FAKER
@@ -682,18 +824,47 @@ def build_setup_path_params(node_info: dict) -> dict:
         if c.get("location") == "Path" and c.get("param") and c.get("semantic_key"):
             param    = c["param"]
             sem_key  = c["semantic_key"]
-            path_params[param] = f"{{{{ {sem_key} }}}}"
+            path_params[param] = f"{{{{{sem_key}}}}}"
     return path_params
 
 
 def build_setup_query_params(node_info: dict) -> dict:
     """
-    Sinh query_params template cho setup step dựa trên consumes của node.
+    Sinh query_params template cho setup step dựa trên query_schema của node.
+    Kết hợp cả biến động (truyền ID từ endpoint khác) và biến tĩnh (giá trị mặc định).
     """
-    query_params: dict = {}
+    query_schema = node_info.get("query_schema", {})
+    if not query_schema:
+        return {}
+
+    # Build lookup: param_name → semantic_key (từ consumes)
+    dynamic_by_param: dict[str, str] = {}
     for c in node_info.get("consumes", []):
-        if c.get("location") == "Query" and c.get("param") and c.get("semantic_key"):
-            param    = c["param"]
-            sem_key  = c["semantic_key"]
-            query_params[param] = f"{{{{ {sem_key} }}}}"
+        if c.get("location") == "Query" and c.get("semantic_key") and c.get("param"):
+            dynamic_by_param[c["param"]] = c["semantic_key"]
+
+    query_params: dict = {}
+    for fname, schema in query_schema.items():
+        # Bỏ qua nested fields nếu có (thường query string ít khi có nested kiểu a.b=1)
+        if "." in fname:
+            continue
+
+        if fname in dynamic_by_param:
+            # Field cần ID từ endpoint khác (từ dependencies.json)
+            sem_key = dynamic_by_param[fname]
+            query_params[fname] = f"{{{{{sem_key}}}}}"
+            
+        elif schema.get("is_dynamic") and schema.get("semantic_key"):
+            # Field động đã được gộp thẳng vào schema ở bước parse
+            sem_key = schema["semantic_key"]
+            query_params[fname] = f"{{{{{sem_key}}}}}"
+            
+        elif schema.get("is_dynamic") and schema.get("variable_name"):
+            # Field có DynamicObject payload (từ grammar.json)
+            sem_key = variable_name_to_semantic_key(schema["variable_name"])
+            query_params[fname] = f"{{{{{sem_key}}}}}"
+            
+        else:
+            query_params[fname] = schema.get("default")
+
     return query_params
