@@ -76,7 +76,12 @@ print(json.dumps(body_del, indent=2, ensure_ascii=False))
 from app.agents.planning_agent import plan_for_endpoint
 
 print("\n=== plan_for_endpoint(POST:/Category, no recon_item) ===")
-plans = plan_for_endpoint("POST:/Category", cat_node, recon_item=None)
+users = [
+    {"role": "admin"},
+    {"role": "attacker"},
+    {"role": "victim"},
+]
+plans = plan_for_endpoint("POST:/Category", cat_node, recon_item=None, users=users)
 print(f"  Plans count: {len(plans)}")
 if plans:
     p = plans[0]
@@ -86,6 +91,7 @@ if plans:
     print(f"  Steps count: {len(steps)}")
     if steps:
         step = steps[0]
+        print(f"  step run_as: {step.get('run_as')}")
         print(f"  step body: {json.dumps(step.get('body'), ensure_ascii=False)}")
         print(f"  step headers: {step.get('headers')}")
         print(f"  step expected: {step.get('expected_indicator')}")

@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 class ReconAgent:
     def __init__(self, api_key: str):
         self.api_key = api_key
-        self.expert_model = settings.LARGE_MODEL_NAME
+        self.expert_model = settings.GPT_OOS_20B
 
     def load_kb(self):
         kb_path = Path(__file__).resolve().parent.parent.parent / "knowledge" / "owasp_kb.json"

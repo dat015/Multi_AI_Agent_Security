@@ -26,6 +26,8 @@ class AnalysisResult(BaseModel):
     recon_summary: Optional[str]   = None
     endpoints_found: Optional[int] = None
     test_plan: Optional[list]      = None
+    vuln_findings: Optional[list]  = None
+    report_summary: Optional[dict] = None
     error: Optional[str]           = None
 
 
@@ -36,7 +38,6 @@ def _save_uploaded_spec(session_id: str, filename: str, content: bytes) -> Path:
     spec_path = upload_dir / f"spec{ext}"
     spec_path.write_bytes(content)
     return spec_path
-
 
 def _run_restler_compile(spec_path: Path, compile_path: str) -> None:
     restler_exe = os.getenv("RESTLER_EXE", r"C:\RESTler_Bin\restler\Restler.exe")
@@ -134,6 +135,7 @@ async def analyze(
         "recon_summary": None,
         "endpoints_found": None,
         "test_plan": None,
+        "vuln_findings": None,
         "error": None,
     }
 
@@ -169,12 +171,26 @@ def get_result(session_id: str):
                 recon_summary=None,
                 endpoints_found=None,
                 test_plan=test_plan,
+                vuln_findings=None,
                 error=None,
             )
 
         raise HTTPException(status_code=404, detail="Session không tồn tại")
 
     return AnalysisResult(session_id=session_id, **data)
+
+# ── Route: frontend lấy kết quả riêng của analyzer (lỗ hổng) ──────────
+@router.get("/analyzer-result/{session_id}")
+def get_analyzer_result(session_id: str):
+    data = session_store.get(session_id)
+    if not data:
+        raise HTTPException(status_code=404, detail="Session không tồn tại")
+    
+    return {
+        "session_id": session_id,
+        "status": data.get("status"),
+        "vuln_findings": data.get("vuln_findings", [])
+    }
 
 # ── Route: download test_plan.json ────────────────────────────────────
 @router.get("/download/{session_id}")
@@ -232,18 +248,39 @@ def run_pipeline(
         if not final_state:
             raise ValueError("Pipeline không trả về kết quả")
 
-        output_dir = Path("outputs")
-        output_dir.mkdir(exist_ok=True)
-        plan_path = output_dir / f"{session_id}_test_plan.json"
+        raw_reports = final_state.get("final_report", [])
+        formatted_vulns = []
+        for r in raw_reports:
+            assessment = r.get("assessment", {})
+            evidence = r.get("evidence", {})
+            
+            # Tách method và endpoint từ node_id (VD: "GET:/path")
+            node_id = r.get("node_id", "")
+            method = "GET"
+            endpoint = node_id
+            if ":" in node_id:
+                method, endpoint = node_id.split(":", 1)
 
-        with open(plan_path, "w", encoding="utf-8") as f:
-            json.dump(final_state.get("test_plan", []), f, ensure_ascii=False, indent=2)
+            formatted_vulns.append({
+                "id": node_id,
+                "endpoint": endpoint,
+                "method": method,
+                "vuln_type": r.get("vuln_type"),
+                "role": r.get("role"),
+                "is_vulnerable": assessment.get("is_vulnerable", False),
+                "severity": assessment.get("severity", "Safe"),
+                "confidence_score": assessment.get("confidence_score", 0),
+                "reasoning": assessment.get("reasoning", ""),
+                "evidence": evidence
+            })
 
         session_store[session_id] = {
             "status": "done",
             "recon_summary": final_state.get("recon_summary", ""),
             "endpoints_found": len(final_state.get("filtered_endpoints", [])),
             "test_plan": final_state.get("test_plan", []),
+            "vuln_findings": formatted_vulns,
+            "report_summary": final_state.get("report_summary", None),
             "error": None,
         }
 
@@ -253,5 +290,6 @@ def run_pipeline(
             "recon_summary": None,
             "endpoints_found": None,
             "test_plan": None,
+            "vuln_findings": None,
             "error": str(e),
         }

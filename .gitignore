@@ -59,3 +59,10 @@ htmlcov/
 
 # 🔹 Migrations (tuỳ project)
 # migrations/
+
+# 🔹 Uploads
+uploads/
+/ai-agent/uploads/
+
+# 🔹 Spec files
+*spec.json

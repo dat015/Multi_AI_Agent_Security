@@ -1,19 +1,15 @@
-import { BrowserRouter } from 'react-router-dom';
-import { QueryProvider } from './providers/QueryProvider';
-import { MainLayout } from './layouts/MainLayout';
-import { AppRoutes } from './routes/AppRoutes';
-
+import { useState } from 'react';
+import MainLayout from './layouts/MainLayout'
+import DashboardPage from './features/dashboard/DashboardPage'
 
 function App() {
+  const [sessionId, setSessionId] = useState<string | null>(null);
+
   return (
-    <QueryProvider>
-      <BrowserRouter>
-        <MainLayout>
-          <AppRoutes />
-        </MainLayout>
-      </BrowserRouter>
-    </QueryProvider>
-  );
+    <MainLayout sessionId={sessionId}>
+      <DashboardPage onSessionIdUpdate={setSessionId} />
+    </MainLayout>
+  )
 }
 
-export default App;
+export default App

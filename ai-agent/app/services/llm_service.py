@@ -1,5 +1,6 @@
 from langchain_openai import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.messages import SystemMessage, HumanMessage
 from pydantic import BaseModel
 from typing import Optional
 from app.core.config import settings
@@ -49,8 +50,8 @@ class LLMService:
             llm_with_json = self.llm.bind(response_format={"type": "json_object"})
             
             messages = [
-                ("system", system_prompt),
-                ("human", user_prompt)
+                SystemMessage(content=system_prompt),
+                HumanMessage(content=user_prompt)
             ]
             max_retries = getattr(settings, "LLM_MAX_RETRIES", 5)
             @retry(

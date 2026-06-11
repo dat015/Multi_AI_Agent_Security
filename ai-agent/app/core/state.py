@@ -27,7 +27,8 @@ class SystemState(TypedDict):
     max_iterations: int
 
     # Reporting
-    final_report: Optional[str]
+    final_report: List[Dict]         # Analyzer output
+    report_summary: Optional[Dict[str, Any]] # Reporting Agent output
 
     # Control
     error: Optional[str]
