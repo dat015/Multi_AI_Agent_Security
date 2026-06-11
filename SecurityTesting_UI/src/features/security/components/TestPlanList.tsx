@@ -19,7 +19,7 @@ const TestPlanList: React.FC<TestPlanListProps> = ({ testPlan, onDownload, showD
 
   return (
     <div className="mt-6">
-      <h2 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
+      <h2 className="text-lg font-semibold text-slate-900 mb-4 flex items-center gap-2">
         📋 Test Plan sinh ra
         <span className="text-xs bg-gray-700 px-2 py-1 rounded-full">{testPlan.length} cases</span>
       </h2>

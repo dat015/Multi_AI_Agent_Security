@@ -148,9 +148,9 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ onSessionIdUpdate }) => {
 
   if (status === 'error') {
     return (
-      <div className="max-w-2xl mx-auto mt-10 p-8 bg-slate-800 border border-slate-700 rounded-2xl shadow-lg flex flex-col items-center">
+      <div className="max-w-2xl mx-auto mt-10 p-8 bg-white border border-slate-200 rounded-2xl shadow-lg flex flex-col items-center">
         <AlertCircle size={48} className="text-red-500 mb-4" />
-        <h2 className="text-2xl font-bold text-white mb-2">Lỗi quá trình quét</h2>
+        <h2 className="text-2xl font-bold text-slate-900 mb-2">Lỗi quá trình quét</h2>
         <p className="text-red-400 mb-6 text-center">{errorMsg}</p>
         <button 
           onClick={() => {
@@ -158,7 +158,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ onSessionIdUpdate }) => {
             setSessionId(null);
             onSessionIdUpdate(null);
           }}
-          className="px-6 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded-lg transition-colors"
+          className="px-6 py-2 bg-slate-100 hover:bg-slate-200 text-white rounded-lg transition-colors"
         >
           Thử lại
         </button>

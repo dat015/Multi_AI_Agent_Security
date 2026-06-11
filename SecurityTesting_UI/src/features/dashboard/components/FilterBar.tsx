@@ -17,15 +17,15 @@ const FilterBar: React.FC<FilterBarProps> = ({ onFilterChange }) => {
   }, [vulnType, severity, role, endpoint]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
-    <div className="bg-slate-800 border border-slate-700 rounded-xl p-4 shadow-sm flex flex-col md:flex-row gap-4 items-center mb-6">
-      <div className="flex items-center gap-2 text-slate-300 mr-2">
+    <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm flex flex-col md:flex-row gap-4 items-center mb-6">
+      <div className="flex items-center gap-2 text-slate-700 mr-2">
         <Filter size={18} />
         <span className="font-medium">Lọc theo:</span>
       </div>
       
       <div className="w-full md:w-auto flex-1 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
         <select 
-          className="bg-slate-900 border border-slate-700 text-slate-300 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full p-2.5"
+          className="bg-slate-50 border border-slate-200 text-slate-700 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full p-2.5"
           value={vulnType}
           onChange={(e) => setVulnType(e.target.value)}
         >
@@ -38,7 +38,7 @@ const FilterBar: React.FC<FilterBarProps> = ({ onFilterChange }) => {
         </select>
         
         <select 
-          className="bg-slate-900 border border-slate-700 text-slate-300 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full p-2.5"
+          className="bg-slate-50 border border-slate-200 text-slate-700 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full p-2.5"
           value={severity}
           onChange={(e) => setSeverity(e.target.value)}
         >
@@ -50,7 +50,7 @@ const FilterBar: React.FC<FilterBarProps> = ({ onFilterChange }) => {
         </select>
 
         <select 
-          className="bg-slate-900 border border-slate-700 text-slate-300 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full p-2.5"
+          className="bg-slate-50 border border-slate-200 text-slate-700 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full p-2.5"
           value={role}
           onChange={(e) => setRole(e.target.value)}
         >
@@ -66,7 +66,7 @@ const FilterBar: React.FC<FilterBarProps> = ({ onFilterChange }) => {
           </div>
           <input 
             type="text" 
-            className="bg-slate-900 border border-slate-700 text-slate-300 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full pl-10 p-2.5" 
+            className="bg-slate-50 border border-slate-200 text-slate-700 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full pl-10 p-2.5" 
             placeholder="Tìm theo Endpoint..." 
             value={endpoint}
             onChange={(e) => setEndpoint(e.target.value)}

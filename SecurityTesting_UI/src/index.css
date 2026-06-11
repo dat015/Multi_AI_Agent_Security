@@ -4,7 +4,7 @@
 
 @layer base {
   body {
-    @apply bg-slate-900 text-slate-200 antialiased;
+    @apply bg-slate-50 text-slate-800 antialiased;
   }
 
   ::-webkit-scrollbar {
@@ -12,10 +12,10 @@
   }
 
   ::-webkit-scrollbar-track {
-    @apply bg-slate-800 rounded-full;
+    @apply bg-white rounded-full;
   }
 
   ::-webkit-scrollbar-thumb {
-    @apply bg-slate-600 rounded-full hover:bg-slate-500 transition-colors;
+    @apply bg-slate-200 rounded-full hover:bg-slate-500 transition-colors;
   }
 }

@@ -51,16 +51,16 @@ const ScanUploader: React.FC<ScanUploaderProps> = ({ onScanStarted }) => {
   };
 
   return (
-    <div className="max-w-2xl mx-auto mt-10 p-8 bg-slate-800 border border-slate-700 rounded-2xl shadow-lg">
+    <div className="max-w-2xl mx-auto mt-10 p-8 bg-white border border-slate-200 rounded-2xl shadow-lg">
       <div className="text-center mb-8">
-        <h2 className="text-2xl font-bold text-white mb-2">Khởi tạo Quét Bảo mật API</h2>
-        <p className="text-slate-400">Tải lên tài liệu đặc tả OpenAPI và cấu hình để bắt đầu phân tích.</p>
+        <h2 className="text-2xl font-bold text-slate-900 mb-2">Khởi tạo Quét Bảo mật API</h2>
+        <p className="text-slate-600">Tải lên tài liệu đặc tả OpenAPI và cấu hình để bắt đầu phân tích.</p>
       </div>
 
       <div className="space-y-6">
         {/* Spec File Upload (Required) */}
         <div>
-          <label className="block text-sm font-medium text-slate-300 mb-2">
+          <label className="block text-sm font-medium text-slate-700 mb-2">
             OpenAPI Specification <span className="text-red-500">*</span>
           </label>
           <div className="relative">
@@ -75,15 +75,15 @@ const ScanUploader: React.FC<ScanUploaderProps> = ({ onScanStarted }) => {
               htmlFor="spec-upload"
               className={cn(
                 "flex items-center justify-center w-full px-4 py-6 border-2 border-dashed rounded-xl cursor-pointer transition-colors",
-                specFile ? "border-blue-500 bg-blue-500/5" : "border-slate-600 hover:border-slate-500 bg-slate-900/50"
+                specFile ? "border-blue-500 bg-blue-500/5" : "border-slate-300 hover:border-slate-500 bg-slate-50/50"
               )}
             >
               <div className="flex flex-col items-center gap-2">
-                <FileCode className={specFile ? "text-blue-400" : "text-slate-400"} size={32} />
+                <FileCode className={specFile ? "text-blue-400" : "text-slate-600"} size={32} />
                 {specFile ? (
                   <span className="text-sm font-medium text-blue-300">{specFile.name}</span>
                 ) : (
-                  <span className="text-sm text-slate-400">Kéo thả hoặc Click để tải lên file .yaml, .json</span>
+                  <span className="text-sm text-slate-600">Kéo thả hoặc Click để tải lên file .yaml, .json</span>
                 )}
               </div>
             </label>
@@ -92,7 +92,7 @@ const ScanUploader: React.FC<ScanUploaderProps> = ({ onScanStarted }) => {
 
         {/* Config File Upload (Optional) */}
         <div>
-          <label className="block text-sm font-medium text-slate-300 mb-2">
+          <label className="block text-sm font-medium text-slate-700 mb-2">
             File Cấu hình (Tùy chọn)
           </label>
           <div className="relative">
@@ -107,15 +107,15 @@ const ScanUploader: React.FC<ScanUploaderProps> = ({ onScanStarted }) => {
               htmlFor="config-upload"
               className={cn(
                 "flex items-center justify-center w-full px-4 py-4 border-2 border-dashed rounded-xl cursor-pointer transition-colors",
-                configFile ? "border-green-500 bg-green-500/5" : "border-slate-600 hover:border-slate-500 bg-slate-900/50"
+                configFile ? "border-green-500 bg-green-500/5" : "border-slate-300 hover:border-slate-500 bg-slate-50/50"
               )}
             >
               <div className="flex items-center gap-3">
-                <FileJson className={configFile ? "text-green-400" : "text-slate-400"} size={24} />
+                <FileJson className={configFile ? "text-green-400" : "text-slate-600"} size={24} />
                 {configFile ? (
                   <span className="text-sm font-medium text-green-300">{configFile.name}</span>
                 ) : (
-                  <span className="text-sm text-slate-400">Tải lên file config.json</span>
+                  <span className="text-sm text-slate-600">Tải lên file config.json</span>
                 )}
               </div>
             </label>
@@ -132,7 +132,7 @@ const ScanUploader: React.FC<ScanUploaderProps> = ({ onScanStarted }) => {
         <button
           onClick={handleStartScan}
           disabled={!specFile || isLoading}
-          className="w-full flex items-center justify-center gap-2 py-3 px-4 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-700 disabled:text-slate-500 text-white font-medium rounded-xl transition-colors"
+          className="w-full flex items-center justify-center gap-2 py-3 px-4 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-100 disabled:text-slate-500 text-white font-medium rounded-xl transition-colors"
         >
           {isLoading ? (
             <span className="animate-spin w-5 h-5 border-2 border-white/30 border-t-white rounded-full"></span>
