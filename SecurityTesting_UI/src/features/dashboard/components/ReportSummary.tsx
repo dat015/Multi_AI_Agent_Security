@@ -33,9 +33,9 @@ const ReportSummary: React.FC<ReportSummaryProps> = ({ reportSummary }) => {
   const { executive_summary, overall_risk_level, recommendations } = reportSummary;
 
   return (
-    <div className="bg-slate-800 border border-slate-700 rounded-xl overflow-hidden shadow-lg mb-6">
-      <div className="border-b border-slate-700 bg-slate-800/50 px-6 py-4 flex items-center justify-between">
-        <h2 className="text-xl font-bold text-white flex items-center gap-2">
+    <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-lg mb-6">
+      <div className="border-b border-slate-200 bg-white/50 px-6 py-4 flex items-center justify-between">
+        <h2 className="text-xl font-bold text-slate-900 flex items-center gap-2">
           <Shield className="text-blue-400" size={24} />
           Executive Security Report
         </h2>
@@ -48,22 +48,22 @@ const ReportSummary: React.FC<ReportSummaryProps> = ({ reportSummary }) => {
       <div className="p-6 grid grid-cols-1 lg:grid-cols-3 gap-8">
         <div className="lg:col-span-2 space-y-6">
           <div>
-            <h3 className="text-lg font-semibold text-slate-300 mb-3">Executive Summary</h3>
-            <p className="text-slate-400 leading-relaxed">
+            <h3 className="text-lg font-semibold text-slate-700 mb-3">Executive Summary</h3>
+            <p className="text-slate-600 leading-relaxed">
               {executive_summary}
             </p>
           </div>
         </div>
 
-        <div className="bg-slate-900/50 border border-slate-700/50 rounded-lg p-5">
-          <h3 className="text-lg font-semibold text-slate-300 mb-4 flex items-center gap-2">
+        <div className="bg-slate-50/50 border border-slate-200/50 rounded-lg p-5">
+          <h3 className="text-lg font-semibold text-slate-700 mb-4 flex items-center gap-2">
             <ShieldCheck className="text-emerald-400" size={20} />
             Recommendations
           </h3>
           <ul className="space-y-3">
             {recommendations && recommendations.length > 0 ? (
               recommendations.map((rec, idx) => (
-                <li key={idx} className="flex items-start gap-3 text-slate-400 text-sm">
+                <li key={idx} className="flex items-start gap-3 text-slate-600 text-sm">
                   <span className="w-1.5 h-1.5 rounded-full bg-blue-400 mt-2 flex-shrink-0"></span>
                   <span>{rec}</span>
                 </li>

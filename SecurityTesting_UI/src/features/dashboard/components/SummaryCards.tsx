@@ -16,7 +16,6 @@ const SummaryCards: React.FC<SummaryCardsProps> = ({ total, vulnerable, safe, ra
         title="Tổng số API đã test"
         value={total.toString()}
         icon={<Activity size={24} className="text-blue-400" />}
-        trend="+12% từ lần trước"
       />
       <Card
         title="Số lỗ hổng phát hiện"
@@ -53,16 +52,16 @@ interface CardProps {
 
 const Card: React.FC<CardProps> = ({ title, value, icon, valueClassName, trend }) => {
   return (
-    <div className="bg-slate-800 border border-slate-700 rounded-xl p-5 shadow-sm hover:shadow-md transition-shadow relative overflow-hidden group">
+    <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm hover:shadow-md transition-shadow relative overflow-hidden group">
       <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity group-hover:scale-110 transform duration-300">
         {icon}
       </div>
       <div className="flex justify-between items-start mb-4">
-        <h3 className="text-slate-400 font-medium text-sm">{title}</h3>
-        <div className="p-2 bg-slate-700/50 rounded-lg">{icon}</div>
+        <h3 className="text-slate-600 font-medium text-sm">{title}</h3>
+        <div className="p-2 bg-slate-100/50 rounded-lg">{icon}</div>
       </div>
       <div className="flex flex-col">
-        <span className={cn("text-3xl font-bold tracking-tight", valueClassName || "text-white")}>
+        <span className={cn("text-3xl font-bold tracking-tight", valueClassName || "text-slate-900")}>
           {value}
         </span>
         {trend && (
