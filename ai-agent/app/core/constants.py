@@ -3,7 +3,19 @@ MODEL_NAME = "gpt-4o-mini"
 DEFAULT_TEMPERATURE = 0.3
 CHUNK_SIZE = 10
 
-SWAGGER_DEFAULT_PATH = "swagger/api.json"
+# Kích thước chuỗi thay thế cho placeholder [LARGE_PAYLOAD] (tính bằng byte/ký tự ASCII)
+# Đây là nguồn duy nhất của giá trị này — không hardcode ở bất kỳ nơi nào khác
+LARGE_PAYLOAD_SIZE_BYTES = 10_000
+
+# Giá trị số nguyên lớn cho token {{$large_int}} — dùng khi test API4 (payload/page size)
+# Sửa tại đây nếu muốn thay đổi, không hardcode ở nơi khác
+LARGE_INT_VALUE = 1_000_000
+
+# Ngưỡng phát hiện "large int hardcode" trong query_params (để sanitize tự động thay)
+# Bất kỳ integer > ngưỡng này trong pagination param → bị thay bằng {{$large_int}}
+LARGE_INT_THRESHOLD = 10_000
+
+SWAGGER_DEFAULT_PATH = "swagger/api2.json"
 KNOWLEDGE_DEFAULT_PATH = "knowledge/owasp_kb.json"
 
 AGENT_SYSTEM_PROMPT = """
@@ -57,9 +69,13 @@ Example:
 2.
 DO NOT blindly trust pre-assigned tags.
 
+Pre-assigned OWASP risks SHOULD be kept when endpoint evidence reasonably supports them.
+
 Weak signals alone SHOULD NOT automatically confirm a vulnerability.
 
-However, plausible OWASP risk indicators SHOULD be preserved.
+ONLY remove a candidate when endpoint metadata clearly lacks supporting evidence.
+
+If strong endpoint evidence suggests another OWASP API risk, you MAY add additional vulnerabilities.
 
 3.
 Missing authentication ALONE does NOT automatically indicate API2 (Broken Authentication).

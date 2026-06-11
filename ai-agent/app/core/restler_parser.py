@@ -29,24 +29,24 @@ logger = logging.getLogger(__name__)
 # Key: field name (lowercase, stripped dấu _/-)
 # Value: giá trị mặc định phù hợp với API
 FIELD_NAME_FAKER: dict[str, Any] = {
-    "email":          "testuser@example.com",
+    "email":          "testuser-{{$timestamp}}@example.com",
     "password":       "Test@1234",
-    "username":       "testuser001",
+    "username":       "test-user-{{$timestamp}}",
     "firstname":      "John",
     "lastname":       "Doe",
     "fullname":       "John Doe",
-    "name":           "Test-Item-001",
-    "displayname":    "Test Item",
+    "name":           "Test-Item-{{$timestamp}}",
+    "displayname":    "Test Item-{{$timestamp}}",
     "description":    "Auto-generated for testing",
     "address":        "123 Test Street",
     "phone":          "0901234567",
     "phonenumber":    "0901234567",
     "mobile":         "0901234567",
-    "code":           "CODE-001",
-    "taxcode":        "TAX-001",
-    "taxnumber":      "TAX-001",
-    "ordernumber":    "ORD-001",
-    "invoicenumber":  "INV-001",
+    "code":           "CODE-{{$timestamp}}",
+    "taxcode":        "TAX-{{$timestamp}}",
+    "taxnumber":      "TAX-{{$timestamp}}",
+    "ordernumber":    "ORD-{{$timestamp}}",
+    "invoicenumber":  "INV-{{$timestamp}}",
     "notes":          "auto note",
     "note":           "auto note",
     "reason":         "test reason",
@@ -168,6 +168,15 @@ def get_default_for_field(field_name: str, type_str: str, restler_default: str |
 # ══════════════════════════════════════════════════════════════════════
 # GRAMMAR.JSON PARSERS
 # ══════════════════════════════════════════════════════════════════════
+METHOD_ORDER = {
+    "GET":    0,
+    "POST":   1,
+    "PUT":    2,
+    "PATCH":  2,
+    "DELETE": 3,   # DELETE luôn cuối cùng
+}
+
+
 
 def _extract_fuzzable_fields(data: Any, result: dict, prefix: str = "", passed_name: str = "") -> None:
     """
@@ -181,15 +190,35 @@ def _extract_fuzzable_fields(data: Any, result: dict, prefix: str = "", passed_n
             name = leaf.get("name", "") or passed_name
             if not name:
                 return
-            full_name = f"{prefix}.{name}" if prefix else name
+            if prefix and name and prefix.endswith(name):
+                full_name = prefix
+            else:
+                full_name = (
+                    f"{prefix}.{name}"
+                    if prefix
+                    else name
+                )
             payload = leaf.get("payload", {})
 
             if "Fuzzable" in payload:
                 fuzz = payload["Fuzzable"]
+                ptype = fuzz.get("primitiveType", "String")
+                enum_values = None
+
+                if isinstance(ptype, dict) and "Enum" in ptype:
+                    enum_data = ptype["Enum"]
+                    if isinstance(enum_data, list) and len(enum_data) >= 3:
+                        ptype = enum_data[1]  # e.g., "Int" or "String"
+                        raw_enum_vals = enum_data[2]
+                        # Coerce enum values so they match the correct Python type
+                        enum_values = [coerce_to_type(v, ptype) for v in raw_enum_vals]
+
                 result[full_name] = {
-                    "type":    fuzz.get("primitiveType", "String"),
+                    "type":    ptype,
                     "default": fuzz.get("defaultValue", "fuzzstring"),
                 }
+                if enum_values:
+                    result[full_name]["enum"] = enum_values
             elif "DynamicObject" in payload:
                 dyn = payload["DynamicObject"]
                 result[full_name] = {
@@ -201,16 +230,29 @@ def _extract_fuzzable_fields(data: Any, result: dict, prefix: str = "", passed_n
 
         elif "InternalNode" in data:
             internal = data["InternalNode"]
+
             if isinstance(internal, list) and len(internal) == 2:
                 meta, children = internal
+
                 node_name = meta.get("name", "")
+
                 if node_name:
-                    new_prefix = f"{prefix}.{node_name}" if prefix else node_name
+                    new_prefix = (
+                        f"{prefix}.{node_name}"
+                        if prefix
+                        else node_name
+                    )
                 else:
                     new_prefix = prefix
+
                 if isinstance(children, list):
                     for child in children:
-                        _extract_fuzzable_fields(child, result, new_prefix)
+                        _extract_fuzzable_fields(
+                            child,
+                            result,
+                            new_prefix,
+                            node_name or passed_name  
+                        )
         else:
             # RESTler format cho Query params: { "name": "customerId", "payload": { "LeafNode": ... } }
             # Ta lấy "name" lưu vào biến current_name để truyền chìm xuống level con
@@ -355,15 +397,19 @@ def _topo_sort(node_ids: list[str], node_dependencies: dict[str, list[str]]) -> 
                 in_degree[consumer] += 1
 
     # Bước 2: Khởi tạo queue với các node không có dependency
+    # Sort theo METHOD_ORDER trước, sau đó theo bảng chữ cái để đảm bảo tính ổn định
     queue: deque[str] = deque(
-        sorted(n for n in node_ids if in_degree[n] == 0)
+        sorted(
+            (n for n in node_ids if in_degree[n] == 0),
+            key=lambda x: (METHOD_ORDER.get(x.split(":")[0].upper(), 99), x)
+        )
     )
     result: list[str] = []
 
     while queue:
         node = queue.popleft()
         result.append(node)
-        for succ in sorted(successors[node]):
+        for succ in sorted(successors[node], key=lambda x: (METHOD_ORDER.get(x.split(":")[0].upper(), 99), x)):
             in_degree[succ] -= 1
             if in_degree[succ] == 0:
                 queue.append(succ)
@@ -512,6 +558,12 @@ def build_dependency_graph_from_restler(grammar_path: str, deps_path: str) -> di
                         fdata.get("default"),
                     ),
                 }
+                if "enum" in fdata:
+                    body_schema[fname]["enum"] = fdata["enum"]
+                    enum_vals = fdata["enum"]
+                    if str(body_schema[fname]["default"]) not in [str(e) for e in enum_vals]:
+                        if enum_vals:
+                            body_schema[fname]["default"] = coerce_to_type(enum_vals[0], fdata["type"])
         raw_query = parse_body_schema(req.get("queryParameters", []))
         query_schema: dict = {}
         for fname, fdata in raw_query.items():
@@ -531,6 +583,12 @@ def build_dependency_graph_from_restler(grammar_path: str, deps_path: str) -> di
                         fdata.get("default"),
                     ),
                 }
+                if "enum" in fdata:
+                    query_schema[fname]["enum"] = fdata["enum"]
+                    enum_vals = fdata["enum"]
+                    if str(query_schema[fname]["default"]) not in [str(e) for e in enum_vals]:
+                        if enum_vals:
+                            query_schema[fname]["default"] = coerce_to_type(enum_vals[0], fdata["type"])
         # ── 3. Path dynamic vars ───────────────────────────────────
         path_dynamic = parse_path_dynamic_vars(req.get("path", []))
 
@@ -767,12 +825,36 @@ def build_dependency_graph_from_restler(grammar_path: str, deps_path: str) -> di
 # SETUP BODY BUILDER — dùng bởi planning_agent
 # ══════════════════════════════════════════════════════════════════════
 
+# Tên field (lowercase) gợi ý cần uniqueness — dùng để inject {{$timestamp}}-{{$role}}
+# khi tạo setup body, tránh unique constraint khi attacker và victim đều POST.
+# Là nguồn duy nhất định nghĩa danh sách này — không hardcode giá trị ở nơi khác.
+_UNIQUE_FIELD_KEYWORDS: frozenset[str] = frozenset({
+    "name", "code", "number", "email", "title", "label", "slug",
+    "username", "sku", "invoicenumber", "ordernumber",
+})
+
+
+def _field_needs_uniqueness(field_name: str) -> bool:
+    """
+    Suy ra từ tên field xem field đó có cần giá trị unique không.
+    Dùng heuristic: tên field lowercase chứa keyword trong _UNIQUE_FIELD_KEYWORDS.
+    Không hardcode giá trị — chỉ check tên.
+    """
+    fname_lower = field_name.lower().replace("_", "").replace("-", "")
+    return any(kw in fname_lower for kw in _UNIQUE_FIELD_KEYWORDS)
+
 def build_setup_body(node_info: dict) -> dict | None:
     """
     Sinh HTTP request body cụ thể cho setup step dựa trên RESTler body_schema.
 
-    Không cần LLM. Không có template variable cho field tĩnh.
-    Chỉ dùng {{semantic_key}} cho field cần ID từ endpoint khác.
+    Không cần LLM.
+
+    Quy tắc:
+    - Field dynamic (cần ID từ endpoint khác) → placeholder {{sem_key_A}}
+      Dùng suffix _A (attacker) theo Option A — execution agent resolve đúng role.
+    - Field static string có tên gợi ý uniqueness → append {{$timestamp}}-{{$role}}
+      để tránh unique constraint khi cả attacker và victim cùng POST.
+    - Field khác → default value từ RESTler schema.
 
     Returns None nếu endpoint không có body.
     """
@@ -795,18 +877,29 @@ def build_setup_body(node_info: dict) -> dict | None:
             continue
 
         if fname in dynamic_by_param:
-            # Field này cần ID từ endpoint khác → dùng template
+            # Field này cần ID từ endpoint khác → dùng placeholder với suffix _A
+            # Option A: luôn dùng resource của attacker (_A) để setup
+            # Execution agent resolve {{category.id_A}} → category.id của attacker
             sem_key = dynamic_by_param[fname]
-            body[fname] = f"{{{{{sem_key}}}}}"
+            body[fname] = f"{{{{{sem_key}_A}}}}"
 
         elif schema.get("is_dynamic") and schema.get("variable_name"):
             # Field có DynamicObject payload (referenced từ grammar.json)
             sem_key = variable_name_to_semantic_key(schema["variable_name"])
-            body[fname] = f"{{{{{sem_key}}}}}"
+            body[fname] = f"{{{{{sem_key}_A}}}}"
 
         else:
             # Field tĩnh → dùng default value từ RESTler / FIELD_NAME_FAKER
-            body[fname] = schema.get("default")
+            default_val = schema.get("default")
+
+            # Nếu là string có tên gợi ý uniqueness → append token dynamic
+            # để tránh unique constraint khi cả attacker và victim POST
+            if isinstance(default_val, str) and _field_needs_uniqueness(fname):
+                # Ví dụ: "Test-Item-001" → "Test-Item-001-{{$timestamp}}-{{$role}}"
+                # {{$timestamp}} và {{$role}} được resolve tại runtime bởi VariableStore
+                body[fname] = f"{default_val}-{{{{$timestamp}}}}-{{{{$role}}}}"
+            else:
+                body[fname] = default_val
 
     return body if body else None
 

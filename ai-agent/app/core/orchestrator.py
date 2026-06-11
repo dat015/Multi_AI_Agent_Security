@@ -19,11 +19,7 @@ def should_continue_or_report(state: SystemState) -> str:
     else:
         return "execution"
 
-# ── DUMMY NODE ──────────────
-def dummy_reporting_node(state: SystemState) -> dict:
-    print("\n--- [DUMMY] CHẠY REPORTING NODE ---")
-    print("Dữ liệu đã sẵn sàng để xuất báo cáo.")
-    return state
+from app.agents.reporting_agent import reporting_node
 
 
 def build_graph(phase: str = "phase2") -> any:
@@ -64,7 +60,7 @@ def build_graph(phase: str = "phase2") -> any:
         graph.add_node("planning", planning_node)
         graph.add_node("execution", execution_node)
         graph.add_node("analyzer", analyzer_node)
-        graph.add_node("reporting", dummy_reporting_node)
+        graph.add_node("reporting", reporting_node)
         graph.set_entry_point("recon")
         graph.add_edge("recon", "planning")
         graph.add_edge("planning", "execution")

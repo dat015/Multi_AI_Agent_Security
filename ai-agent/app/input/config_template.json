@@ -7,15 +7,14 @@
   "restler_compile_path": "Compile",
   "users": [
     {
-      "role": "admin",
+      "role": "attacker",
       "email": "dat12@gmail.com",
       "password": "12345"
     },
     {
-      "role": "attacker",
+      "role": "victim",
       "email": "dat121@gmail.com",
       "password": "12345"
     }
   ]
 }
-

@@ -4,6 +4,7 @@ import logging
 from typing import List, Dict, Any
 from pydantic import BaseModel, Field
 from langchain_openai import ChatOpenAI
+from langchain_core.messages import SystemMessage, HumanMessage
 
 from app.agents.planning_agent import load_owasp_kb
 from app.core.constants import ANALYZER_SYSTEM_PROMPT
@@ -21,7 +22,7 @@ class VulnerabilityAssessment(BaseModel):
     is_vulnerable: bool = Field(..., description="True nếu cuộc tấn công thành công (hệ thống có lỗi). False nếu hệ thống an toàn chặn được.")
     confidence_score: int = Field(..., description="Độ tự tự tin của kết luận từ 1 đến 100")
     reasoning: str = Field(..., description="Giải thích chi tiết: Tại sao response này chứng minh có lỗi hoặc không có lỗi?")
-    severity: str = Field(..., description="Mức độ nghiêm trọng: Critical, High, Medium, Low, hoặc Safe")
+    severity: str = Field("Safe", description="Mức độ nghiêm trọng: Critical, High, Medium, Low, hoặc Safe")
 
 class FinalReport(BaseModel):
     assessments: List[VulnerabilityAssessment]
@@ -62,48 +63,34 @@ def analyzer_node(state: dict) -> dict:
 
     tasks = []
     meta = []
+    
     for result in attack_results:
         node_id = result.get("node_id")
         vuln_type = result.get("vuln_type")
-        expected_indicator = result.get("expected_indicator")
         role = result.get("role")
-        
         is_load_test = result.get("is_load_test", False)
-        status_code = result.get("status_code")
-        response_body = result.get("response")
-        summary = result.get("summary")
+        
+        # ---> ĐIỂM THAY ĐỔI: Lấy mảng steps_executed thay vì status_code lẻ
+        steps_executed = result.get("steps_executed", [])
 
-        logger.info(f">> Đang phân tích kết quả tấn công: {node_id} - Lỗi: {vuln_type}")
+        logger.info(f">> Đang phân tích kịch bản tấn công: {node_id} - Lỗi: {vuln_type}")
         kb_context = load_owasp_kb(vuln_type)
-        if is_load_test:
-            # Truyền summary cho LLM thay vì single request
-            evidence = {
-                "API_Endpoint": node_id,
-                "Attack_Type": vuln_type,
-                "Attacker_Role": role,
-                "Expected_Success_Indicator": expected_indicator,
-                "Test_Type": "Load Test / Rate-Limit Test",
-                "Load_Test_Summary": summary
-            }
-        else:
-            evidence = {
-                "API_Endpoint": node_id,
-                "Attack_Type": vuln_type,
-                "Attacker_Role": role,
-                "Expected_Success_Indicator": expected_indicator,
-                "Test_Type": "Single Request",
-                "Actual_HTTP_Status": status_code,
-                "Actual_Response_Body": response_body,
-            }
-        # --- KẾT THÚC SỬA ---
+        
+        # Xây dựng Evidence chứa toàn bộ hành trình
+        evidence = {
+            "API_Endpoint": node_id,
+            "Attack_Type": vuln_type,
+            "Attacker_Role": role,
+            "Test_Type": "Load Test / Rate-Limit Test" if is_load_test else "Sequential Attack Steps (Baseline -> Attack -> Control)",
+            "Execution_Steps": steps_executed
+        }
 
+        # Prompt tinh chỉnh để AI hiểu hành trình các bước
+      # Prompt gọn gàng: Chỉ làm nhiệm vụ truyền Data thực tế vào
         prompt_messages = [
-    ("system", sys_prompt),
-    (
-        "human",
-        f"""
-            You are provided with OWASP security knowledge base
-            for this vulnerability.
+    SystemMessage(content=sys_prompt),
+    HumanMessage(content=f"""
+            You are provided with OWASP security knowledge base for this vulnerability.
 
             === OWASP Knowledge Base ===
             {kb_context}
@@ -111,12 +98,21 @@ def analyzer_node(state: dict) -> dict:
             === Attack Execution Evidence ===
             {json.dumps(evidence, ensure_ascii=False, indent=2)}
 
-            Please evaluate:
-            1. Is the API vulnerable?
-            2. Why?
-            3. Does the evidence satisfy OWASP criteria?
-            """
-                ),
+            Based on the evidence, please evaluate the vulnerability. You MUST return a valid JSON object with the exact following keys:
+            - "is_vulnerable": boolean (true if the attack succeeded, false otherwise)
+            - "confidence_score": integer (1 to 100)
+            - "reasoning": string (detailed explanation of your conclusion)
+            - "severity": string (Critical, High, Medium, Low, or Safe)
+            Return ONLY raw JSON.
+
+            DO NOT wrap output inside:
+            {{
+            "name": "...",
+            "arguments": {{...}}
+            }}
+
+            The response MUST be a direct JSON object matching the schema.
+            """)
     ]
 
         def _make_task(messages):
@@ -130,21 +126,19 @@ def analyzer_node(state: dict) -> dict:
                     prompt_messages=messages,
                     input_variables={},
                     pydantic_schema=VulnerabilityAssessment,
-                    fallback_method="function_calling",
                 )
             return _task
 
         tasks.append(_make_task(prompt_messages))
         
+        # Lưu lại meta để ráp vào report cuối
         meta.append(
             {
                 "node_id": node_id,
                 "vuln_type": vuln_type,
                 "role": role,
                 "is_load_test": is_load_test,
-                "status_code": status_code,
-                "response_body": response_body,
-                "summary": summary
+                "steps_executed": steps_executed
             }
         )
 
@@ -163,37 +157,31 @@ def analyzer_node(state: dict) -> dict:
         if isinstance(assessment, list):
             assessment = assessment[0] if len(assessment) > 0 else None
         if isinstance(assessment, dict):
-            assessment = VulnerabilityAssessment(**assessment)
+            parsed = assessment
+
+            # OpenAI/Groq function-call format
+            if "arguments" in parsed:
+                parsed = parsed["arguments"]
+
+            # Sometimes arguments is JSON string
+            if isinstance(parsed, str):
+                parsed = json.loads(parsed)
+
+            assessment = VulnerabilityAssessment(**parsed)
 
         if assessment and isinstance(assessment, VulnerabilityAssessment):
-            # --- BẮT ĐẦU SỬA: Định dạng lại output report dựa vào loại test ---
             report_item = {
                 "node_id": info["node_id"],
                 "vuln_type": info["vuln_type"],
                 "role": info["role"],
                 "assessment": assessment.model_dump(),
+                "evidence": {
+                    "is_load_test": info["is_load_test"],
+                    "steps": info["steps_executed"]
+                }
             }
             
-            if info["is_load_test"]:
-                report_item["evidence"] = {"load_test_summary": info["summary"]}
-            else:
-                report_item["evidence"] = {
-                    "status_code": info["status_code"],
-                    "response": info["response_body"],
-                }
-            
             final_reports.append(report_item)
-            # --- KẾT THÚC SỬA ---
-
-            status_text = (
-                "VULNERABLE (CÓ LỖI)" if assessment.is_vulnerable else "SAFE (AN TOÀN)"
-            )
-            logger.info(
-                "   => Kết luận: %s | Conf: %s%%",
-                status_text,
-                assessment.confidence_score,
-            )
-            logger.info("   => Lý do: %s", assessment.reasoning)
 
     # Ghi báo cáo ra file
     output_dir = "outputs"
