@@ -102,12 +102,8 @@ class TestPlan(BaseModel):
     max_iterations: int = Field(default=5)
 
 
-llm = ChatOpenAI(
-    api_key=settings.GROQ_API_KEY,
-    base_url=settings.URL_LLM,
-    model=settings.LARGE_MODEL_NAME,
-    temperature=0.1
-)
+llm_service = LLMService(temperature=0.1)
+llm = llm_service.llm
 
 structured_llm = llm.with_structured_output(TestPlan)
 

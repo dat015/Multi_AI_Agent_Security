@@ -13,22 +13,43 @@ logger = logging.getLogger(__name__)
 class LLMService:
     def __init__(
         self,
-        provider: str = "groq",
+        provider: Optional[str] = None,
         api_key: Optional[str] = None,
         model: Optional[str] = None,
         base_url: Optional[str] = None,
         temperature: float = 0.1,
     ):
         """
-        Khởi tạo service. Bạn có thể truyền provider="openai" hoặc "groq" để linh hoạt.
+        Khởi tạo service. Hỗ trợ động "groq", "ollama", hoặc "openai".
         """
-        self.provider = provider
+        # Xác định provider hoạt động (ưu tiên tham số truyền vào, fallback về settings.LLM_PROVIDER)
+        self.provider = provider or settings.LLM_PROVIDER
         
-        if provider == "openai":
+        if self.provider == "openai":
             self.api_key = api_key or settings.OPENAI_API_KEY
             self.base_url = base_url
             self.model = model or "gpt-4o"
-        else: # Default là groq
+        elif self.provider == "ollama":
+            self.api_key = api_key or "ollama"
+            # Nếu base_url rỗng hoặc bị cứng (trỏ tới Groq), đổi sang OLLAMA_BASE_URL
+            if not base_url or base_url == settings.URL_LLM:
+                self.base_url = settings.OLLAMA_BASE_URL
+            else:
+                self.base_url = base_url
+            
+            # Nếu model rỗng hoặc bị cứng sang Groq models, đổi sang OLLAMA_MODEL
+            groq_models = {
+                settings.LARGE_MODEL_NAME, 
+                settings.LITLE_MODEL_NAME, 
+                getattr(settings, "LLAMA_3_3_70B", None), 
+                getattr(settings, "GPT_OOS_20B", None)
+            }
+            if not model or model in groq_models:
+                self.model = settings.OLLAMA_MODEL
+            else:
+                self.model = model
+        else: # Default hoặc "groq"
+            self.provider = "groq"
             self.api_key = api_key or settings.GROQ_API_KEY
             self.base_url = base_url or settings.URL_LLM
             self.model = model or settings.LARGE_MODEL_NAME

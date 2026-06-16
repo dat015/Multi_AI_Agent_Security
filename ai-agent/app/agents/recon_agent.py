@@ -217,3 +217,19 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+def build_id_owner_map(execution_results):
+    id_owners = {}
+    for res in execution_results:
+        if res.get("is_attack"):
+            continue          
+        role = res.get("role")
+        for step in res.get("steps_executed", []):
+            data = step.get("response", {}).get("data", {})
+            if isinstance(data, dict) and "id" in data:
+                id_owners[str(data["id"])] = role
+            elif isinstance(data, list):
+                for item in data:
+                    if isinstance(item, dict) and "id" in item:
+                        id_owners[str(item["id"])] = role
+    return id_owners

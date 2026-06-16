@@ -18,6 +18,9 @@ class Settings:
     LLM_CONCURRENCY_PER_KEY: int = int(os.getenv("LLM_CONCURRENCY_PER_KEY", "2"))
     LLAMA_3_3_70B: str = os.getenv("LLAMA_3_3_70B")
     GPT_OOS_20B: str = os.getenv("GPT_OOS_20B")
+    LLM_PROVIDER: str = os.getenv("LLM_PROVIDER", "groq")
+    OLLAMA_BASE_URL: str = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434/v1")
+    OLLAMA_MODEL: str = os.getenv("OLLAMA_MODEL", "llama3.1")
 settings = Settings()
 
 

@@ -7,7 +7,9 @@
   "paths": {
     "/api/auth/login": {
       "post": {
-        "tags": ["Auth"],
+        "tags": [
+          "Auth"
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -53,7 +55,9 @@
     },
     "/Category": {
       "post": {
-        "tags": ["Category"],
+        "tags": [
+          "Category"
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -99,7 +103,9 @@
     },
     "/Category/get-all": {
       "get": {
-        "tags": ["Category"],
+        "tags": [
+          "Category"
+        ],
         "responses": {
           "200": {
             "description": "OK",
@@ -135,7 +141,9 @@
     },
     "/Category/{id}": {
       "put": {
-        "tags": ["Category"],
+        "tags": [
+          "Category"
+        ],
         "parameters": [
           {
             "name": "id",
@@ -190,7 +198,9 @@
         }
       },
       "delete": {
-        "tags": ["Category"],
+        "tags": [
+          "Category"
+        ],
         "parameters": [
           {
             "name": "id",
@@ -211,7 +221,9 @@
     },
     "/Employee": {
       "post": {
-        "tags": ["Employee"],
+        "tags": [
+          "Employee"
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -257,7 +269,9 @@
     },
     "/Employee/{id}": {
       "get": {
-        "tags": ["Employee"],
+        "tags": [
+          "Employee"
+        ],
         "parameters": [
           {
             "name": "id",
@@ -295,7 +309,9 @@
     },
     "/Product": {
       "post": {
-        "tags": ["Product"],
+        "tags": [
+          "Product"
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -341,7 +357,9 @@
     },
     "/Product/{id}": {
       "get": {
-        "tags": ["Product"],
+        "tags": [
+          "Product"
+        ],
         "parameters": [
           {
             "name": "id",
@@ -379,7 +397,9 @@
     },
     "/Order": {
       "post": {
-        "tags": ["Order"],
+        "tags": [
+          "Order"
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -425,7 +445,9 @@
     },
     "/Order/{id}": {
       "get": {
-        "tags": ["Order"],
+        "tags": [
+          "Order"
+        ],
         "parameters": [
           {
             "name": "id",
@@ -437,63 +459,6 @@
             }
           }
         ],
-        "responses": {
-          "200": {
-            "description": "OK",
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "$ref": "#/components/schemas/Inventory"
-                }
-              },
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Inventory"
-                }
-              },
-              "text/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Inventory"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/Payment/orders/{orderId}/payments": {
-      "post": {
-        "tags": ["Payment"],
-        "parameters": [
-          {
-            "name": "orderId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "format": "int32"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/AddPaymentDto"
-              }
-            },
-            "text/json": {
-              "schema": {
-                "$ref": "#/components/schemas/AddPaymentDto"
-              }
-            },
-            "application/*+json": {
-              "schema": {
-                "$ref": "#/components/schemas/AddPaymentDto"
-              }
-            }
-          }
-        },
         "responses": {
           "200": {
             "description": "OK",
@@ -1000,7 +965,12 @@
         "additionalProperties": false
       },
       "UserRole": {
-        "enum": [0, 1, 2, 3],
+        "enum": [
+          0,
+          1,
+          2,
+          3
+        ],
         "type": "integer",
         "format": "int32"
       }

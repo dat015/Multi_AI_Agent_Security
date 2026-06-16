@@ -25,13 +25,10 @@ from app.schemas.api_schema import APIEndpoint
 from app.helper.make_graph_image import visualize_dependency_graph
 from app.core.config import settings
 
-    
-llm = ChatOpenAI(
-    model=settings.LLAMA_3_3_70B,
-    temperature=0,
-    api_key=settings.GROQ_API_KEY,
-    base_url=settings.URL_LLM
-)
+from app.services.llm_service import LLMService
+
+llm_service = LLMService()
+llm = llm_service.llm
 logger = logging.getLogger(__name__)
 
 # ══════════════════════════════════════════════════════════════════════
