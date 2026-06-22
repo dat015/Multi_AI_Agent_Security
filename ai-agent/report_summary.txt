@@ -1,0 +1,10 @@
+﻿python :   File "<string>", line 12
+At line:1 char:1
++ python -c "
++ ~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (  File "<string>", line 12:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+    print(f'[{vuln}] {node} -> verdict={a.get(" verdict\)}
+                                              ^
+SyntaxError: unterminated string literal (detected at line 12)

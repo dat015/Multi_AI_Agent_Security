@@ -22,7 +22,7 @@ class ReportSummaryOutput(BaseModel):
     recommendations: List[str] = Field(description="Danh sách các khuyến nghị khắc phục")
 
 def reporting_node(state: SystemState) -> Dict[str, Any]:
-    logger.info(">>> RUNNING REPORTING NODE")
+    print(">>> RUNNING REPORTING NODE")
     
     recon_summary = state.get("recon_summary", "")
     endpoints_found = len(state.get("filtered_endpoints", []))
