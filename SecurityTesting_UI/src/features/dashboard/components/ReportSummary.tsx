@@ -1,5 +1,5 @@
 import React from 'react';
-import { ShieldAlert, ShieldCheck, Shield, AlertTriangle } from 'lucide-react';
+import { ShieldAlert, ShieldCheck, Shield, AlertTriangle, Download } from 'lucide-react';
 
 interface ReportSummaryProps {
   reportSummary?: {
@@ -32,6 +32,28 @@ const ReportSummary: React.FC<ReportSummaryProps> = ({ reportSummary }) => {
 
   const { executive_summary, overall_risk_level, recommendations } = reportSummary;
 
+  const handleDownloadReport = () => {
+    const markdownContent = `# Executive Security Report
+
+## Overall Risk Level: ${overall_risk_level.toUpperCase()}
+
+## Executive Summary
+${executive_summary}
+
+## Recommendations
+${recommendations.map(r => `- ${r}`).join('\n')}
+`;
+    const blob = new Blob([markdownContent], { type: 'text/markdown' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'executive_security_report.md';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
   return (
     <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-lg mb-6">
       <div className="border-b border-slate-200 bg-white/50 px-6 py-4 flex items-center justify-between">
@@ -39,9 +61,19 @@ const ReportSummary: React.FC<ReportSummaryProps> = ({ reportSummary }) => {
           <Shield className="text-blue-400" size={24} />
           Executive Security Report
         </h2>
-        <div className={`flex items-center gap-2 px-4 py-1.5 rounded-full border font-semibold ${getRiskColor(overall_risk_level)}`}>
-          {getRiskIcon(overall_risk_level)}
-          <span>{overall_risk_level.toUpperCase()} RISK</span>
+        <div className="flex items-center gap-4">
+          <div className={`flex items-center gap-2 px-4 py-1.5 rounded-full border font-semibold ${getRiskColor(overall_risk_level)}`}>
+            {getRiskIcon(overall_risk_level)}
+            <span>{overall_risk_level.toUpperCase()} RISK</span>
+          </div>
+          <button 
+            onClick={handleDownloadReport}
+            className="flex items-center gap-2 px-4 py-1.5 bg-slate-800 text-white hover:bg-slate-700 rounded-lg transition-colors font-medium text-sm"
+            title="Tải báo cáo (Markdown)"
+          >
+            <Download size={16} />
+            Download
+          </button>
         </div>
       </div>
       

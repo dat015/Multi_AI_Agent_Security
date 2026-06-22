@@ -7,9 +7,7 @@
   "paths": {
     "/api/auth/login": {
       "post": {
-        "tags": [
-          "Auth"
-        ],
+        "tags": ["Auth"],
         "requestBody": {
           "content": {
             "application/json": {
@@ -55,9 +53,7 @@
     },
     "/Category": {
       "post": {
-        "tags": [
-          "Category"
-        ],
+        "tags": ["Category"],
         "requestBody": {
           "content": {
             "application/json": {
@@ -103,9 +99,7 @@
     },
     "/Category/get-all": {
       "get": {
-        "tags": [
-          "Category"
-        ],
+        "tags": ["Category"],
         "responses": {
           "200": {
             "description": "OK",
@@ -141,9 +135,7 @@
     },
     "/Category/{id}": {
       "put": {
-        "tags": [
-          "Category"
-        ],
+        "tags": ["Category"],
         "parameters": [
           {
             "name": "id",
@@ -198,9 +190,7 @@
         }
       },
       "delete": {
-        "tags": [
-          "Category"
-        ],
+        "tags": ["Category"],
         "parameters": [
           {
             "name": "id",
@@ -221,9 +211,7 @@
     },
     "/Employee": {
       "post": {
-        "tags": [
-          "Employee"
-        ],
+        "tags": ["Employee"],
         "requestBody": {
           "content": {
             "application/json": {
@@ -269,9 +257,7 @@
     },
     "/Employee/{id}": {
       "get": {
-        "tags": [
-          "Employee"
-        ],
+        "tags": ["Employee"],
         "parameters": [
           {
             "name": "id",
@@ -309,9 +295,7 @@
     },
     "/Product": {
       "post": {
-        "tags": [
-          "Product"
-        ],
+        "tags": ["Product"],
         "requestBody": {
           "content": {
             "application/json": {
@@ -357,9 +341,7 @@
     },
     "/Product/{id}": {
       "get": {
-        "tags": [
-          "Product"
-        ],
+        "tags": ["Product"],
         "parameters": [
           {
             "name": "id",
@@ -397,9 +379,7 @@
     },
     "/Order": {
       "post": {
-        "tags": [
-          "Order"
-        ],
+        "tags": ["Order"],
         "requestBody": {
           "content": {
             "application/json": {
@@ -445,9 +425,7 @@
     },
     "/Order/{id}": {
       "get": {
-        "tags": [
-          "Order"
-        ],
+        "tags": ["Order"],
         "parameters": [
           {
             "name": "id",
@@ -479,6 +457,106 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "/Payment/orders/{orderId}/payments": {
+      "post": {
+        "tags": ["Payment"],
+        "parameters": [
+          {
+            "name": "orderId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AddPaymentDto"
+              }
+            },
+            "text/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AddPaymentDto"
+              }
+            },
+            "application/*+json": {
+              "schema": {
+                "$ref": "#/components/schemas/AddPaymentDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/Product/{id}": {
+      "get": {
+        "tags": ["ProductV1"],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/Product/import-image": {
+      "post": {
+        "tags": ["Product"],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ImportImageDto"
+              }
+            },
+            "text/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ImportImageDto"
+              }
+            },
+            "application/*+json": {
+              "schema": {
+                "$ref": "#/components/schemas/ImportImageDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/debug/config": {
+      "get": {
+        "tags": ["Debug"],
+        "responses": {
+          "200": {
+            "description": "OK"
           }
         }
       }
@@ -522,6 +600,16 @@
           },
           "isactive": {
             "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
+      "ImportImageDto": {
+        "type": "object",
+        "properties": {
+          "imageUrl": {
+            "type": "string",
+            "nullable": true
           }
         },
         "additionalProperties": false
@@ -965,12 +1053,7 @@
         "additionalProperties": false
       },
       "UserRole": {
-        "enum": [
-          0,
-          1,
-          2,
-          3
-        ],
+        "enum": [0, 1, 2, 3],
         "type": "integer",
         "format": "int32"
       }

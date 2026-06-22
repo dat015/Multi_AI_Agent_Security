@@ -189,7 +189,8 @@ def get_analyzer_result(session_id: str):
     return {
         "session_id": session_id,
         "status": data.get("status"),
-        "vuln_findings": data.get("vuln_findings", [])
+        "vuln_findings": data.get("vuln_findings", []),
+        "report_summary": data.get("report_summary")
     }
 
 # ── Route: download test_plan.json ────────────────────────────────────
