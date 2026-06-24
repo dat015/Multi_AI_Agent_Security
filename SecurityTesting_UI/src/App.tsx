@@ -6,7 +6,7 @@ function App() {
   const [sessionId, setSessionId] = useState<string | null>(null);
 
   return (
-    <MainLayout sessionId={sessionId}>
+    <MainLayout sessionId={sessionId} onSelectSession={setSessionId}>
       <DashboardPage onSessionIdUpdate={setSessionId} />
     </MainLayout>
   )

@@ -1,13 +1,17 @@
-import React from 'react';
-import { ShieldCheck, Download, FileJson, FileText, Bug } from 'lucide-react';
+import React, { useState } from 'react';
+import { ShieldCheck, Download, FileJson, FileText, Bug, History } from 'lucide-react';
 import { API } from '../lib/api';
 import { cn } from '../lib/utils';
+import HistoryModal from '../components/HistoryModal';
 
 interface HeaderProps {
   sessionId?: string | null;
+  onSelectSession?: (sessionId: string) => void;
 }
 
-const Header: React.FC<HeaderProps> = ({ sessionId }) => {
+const Header: React.FC<HeaderProps> = ({ sessionId, onSelectSession }) => {
+  const [isHistoryOpen, setIsHistoryOpen] = useState(false);
+
   const handleDownloadJson = () => {
     if (sessionId) {
       window.open(API.getDownloadUrl(sessionId), '_blank');
@@ -30,53 +34,25 @@ const Header: React.FC<HeaderProps> = ({ sessionId }) => {
         </div>
 
         <div className="flex items-center gap-2 w-full sm:w-auto">
-          <button 
-            disabled={!sessionId}
-            className={cn("flex items-center gap-2 px-3 py-1.5 text-sm font-medium rounded-md transition-colors border",
-              sessionId 
-                ? "text-slate-700 bg-slate-100/50 hover:bg-slate-100 hover:text-slate-900 border-slate-300" 
-                : "text-slate-500 bg-white border-slate-200 cursor-not-allowed"
-            )}
+          <button
+            onClick={() => setIsHistoryOpen(true)}
+            className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium rounded-md transition-colors border text-slate-700 bg-white hover:bg-slate-50 border-slate-300 mr-2"
           >
-            <FileText size={16} />
-            PDF
+            <History size={16} />
+            Lịch sử
           </button>
-          <button 
-            disabled={!sessionId}
-            onClick={handleDownloadJson}
-            className={cn("flex items-center gap-2 px-3 py-1.5 text-sm font-medium rounded-md transition-colors border",
-              sessionId 
-                ? "text-slate-700 bg-slate-100/50 hover:bg-slate-100 hover:text-slate-900 border-slate-300" 
-                : "text-slate-500 bg-white border-slate-200 cursor-not-allowed"
-            )}
-          >
-            <FileJson size={16} />
-            JSON
-          </button>
-          <button 
-            disabled={!sessionId}
-            className={cn("flex items-center gap-2 px-3 py-1.5 text-sm font-medium rounded-md transition-colors border",
-              sessionId 
-                ? "text-slate-700 bg-slate-100/50 hover:bg-slate-100 hover:text-slate-900 border-slate-300" 
-                : "text-slate-500 bg-white border-slate-200 cursor-not-allowed"
-            )}
-          >
-            <Download size={16} />
-            CSV
-          </button>
-          <button 
-            disabled={!sessionId}
-            className={cn("flex items-center gap-2 px-3 py-1.5 text-sm font-medium rounded-md transition-colors ml-2",
-              sessionId
-                ? "text-white bg-blue-600 hover:bg-blue-700"
-                : "text-slate-600 bg-slate-100 cursor-not-allowed"
-            )}
-          >
-            <Bug size={16} />
-            Jira Ticket
-          </button>
+
+
         </div>
       </div>
+
+      <HistoryModal
+        isOpen={isHistoryOpen}
+        onClose={() => setIsHistoryOpen(false)}
+        onSelectSession={(id) => {
+          if (onSelectSession) onSelectSession(id);
+        }}
+      />
     </header>
   );
 };

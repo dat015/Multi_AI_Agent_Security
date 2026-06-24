@@ -13,6 +13,8 @@ from typing import Optional
 from app.core.orchestrator import build_graph
 from app.core.state import SystemState
 from app.core.session_store import CONFIG_STORE, SESSION_STORE  # ← shared stores
+from app.core.db import scan_history
+from datetime import datetime
 
 router = APIRouter()
 
@@ -158,32 +160,49 @@ async def analyze(
 def get_result(session_id: str):
     data = session_store.get(session_id)
     if not data:
-        # Server reload sẽ reset in-memory store. Fallback đọc plan từ disk nếu có.
-        plan_path = Path("outputs") / f"{session_id}_test_plan.json"
-        if plan_path.exists():
-            try:
-                test_plan = json.loads(plan_path.read_text(encoding="utf-8"))
-            except Exception:
-                test_plan = None
-            return AnalysisResult(
-                session_id=session_id,
-                status="done",
-                recon_summary=None,
-                endpoints_found=None,
-                test_plan=test_plan,
-                vuln_findings=None,
-                error=None,
-            )
-
+        # Fallback to MongoDB
+        record = scan_history.find_one({"session_id": session_id}, {"_id": 0})
+        if record:
+            return AnalysisResult(**record)
+            
         raise HTTPException(status_code=404, detail="Session không tồn tại")
 
-    return AnalysisResult(session_id=session_id, **data)
+    data_without_id = {k: v for k, v in data.items() if k != "session_id"}
+    return AnalysisResult(session_id=session_id, **data_without_id)
+
+# ── Route: Lấy lịch sử tất cả các phiên ──────────────────────────────
+@router.get("/history")
+def get_history():
+    # Retrieve all scan runs, sorted by newest first
+    # Project only essential fields to avoid returning heavy payloads (like test_plan or evidence)
+    cursor = scan_history.find(
+        {},
+        {"_id": 0, "session_id": 1, "status": 1, "endpoints_found": 1, "created_at": 1, "error": 1}
+    ).sort("created_at", -1)
+    return list(cursor)
+
+# ── Route: Lấy chi tiết một phiên từ lịch sử ─────────────────────────
+@router.get("/history/{session_id}")
+def get_history_detail(session_id: str):
+    record = scan_history.find_one({"session_id": session_id}, {"_id": 0})
+    if not record:
+        raise HTTPException(status_code=404, detail="Lịch sử session không tồn tại")
+    return record
 
 # ── Route: frontend lấy kết quả riêng của analyzer (lỗ hổng) ──────────
 @router.get("/analyzer-result/{session_id}")
 def get_analyzer_result(session_id: str):
     data = session_store.get(session_id)
     if not data:
+        # Fallback to MongoDB
+        record = scan_history.find_one({"session_id": session_id}, {"_id": 0})
+        if record:
+            return {
+                "session_id": session_id,
+                "status": record.get("status"),
+                "vuln_findings": record.get("vuln_findings", []),
+                "report_summary": record.get("report_summary")
+            }
         raise HTTPException(status_code=404, detail="Session không tồn tại")
     
     return {
@@ -275,7 +294,8 @@ def run_pipeline(
                 "evidence": evidence
             })
 
-        session_store[session_id] = {
+        session_data = {
+            "session_id": session_id,
             "status": "done",
             "recon_summary": final_state.get("recon_summary", ""),
             "endpoints_found": len(final_state.get("filtered_endpoints", [])),
@@ -283,14 +303,24 @@ def run_pipeline(
             "vuln_findings": formatted_vulns,
             "report_summary": final_state.get("report_summary", None),
             "error": None,
+            "created_at": datetime.utcnow()
         }
+        
+        session_store[session_id] = session_data
+        
+        # Save to MongoDB
+        scan_history.insert_one(session_data.copy())
 
     except Exception as e:
-        session_store[session_id] = {
+        session_data = {
+            "session_id": session_id,
             "status": "error",
             "recon_summary": None,
             "endpoints_found": None,
             "test_plan": None,
             "vuln_findings": None,
             "error": str(e),
+            "created_at": datetime.utcnow()
         }
+        session_store[session_id] = session_data
+        scan_history.insert_one(session_data.copy())
