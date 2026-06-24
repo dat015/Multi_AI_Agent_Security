@@ -130,6 +130,44 @@ class InventoryFacts(BaseModel):
     http_status_code: int = Field(description="HTTP status code")
 
 
+class SensitiveBusinessFlowFacts(BaseModel):
+    sensitive_flow_detected: bool = Field(
+        description="True if endpoint is part of a sensitive business flow (e.g. login, payment, checkout, otp)"
+    )
+    automation_pattern_detected: bool = Field(
+        description="True if attacker sent scripts, loops, or many rapid requests with the same payload"
+    )
+    business_limit_present: bool = Field(
+        description="True if server explicitly enforces limits (e.g., rate limit, quota, OTP already sent)"
+    )
+    business_limit_bypassed: bool = Field(
+        description="True if limits exist but attacker bypassed them to continue the flow"
+    )
+    repeated_action_succeeded: bool = Field(
+        description="True if many requests in the flow succeeded (e.g., 200 OK)"
+    )
+    http_status_code: int = Field(description="Last observed HTTP status code")
+
+
+class UnsafeConsumptionFacts(BaseModel):
+    external_api_called: bool = Field(
+        description="True if there is evidence the server called a third-party/external API (webhook, payment gateway, etc.)"
+    )
+    untrusted_data_received: bool = Field(
+        description="True if the response from the external API contained untrusted or dangerous data"
+    )
+    validation_evidence_present: bool = Field(
+        description="True if the server validated the external data (e.g., checksum mismatch, schema validation error)"
+    )
+    untrusted_data_used_directly: bool = Field(
+        description="True if the server used the external data directly without sanitization/checks"
+    )
+    dangerous_effect_observed: bool = Field(
+        description="True if a security consequence occurred (e.g., payment accepted with wrong price, user promoted)"
+    )
+    http_status_code: int = Field(description="Last observed HTTP status code")
+
+
 class FallbackFacts(BaseModel):
     action_bypassed_restriction: bool = Field(
         description="True if the attack successfully bypassed the intended restriction"
